@@ -62,3 +62,15 @@ after each iteration and it's included in prompts for context.
   - `worktree.ts` also references `hive add --force` — should be fixed if/when that file is addressed
 ---
 
+## 2026-03-02 - agenthive-a29.5
+- Implemented working `--raw` flag on `hive config` command
+- `--raw` reads and prints `.hive/config.yaml` as-is without resolving defaults
+- `--raw --json` parses raw YAML and outputs as JSON without default merging
+- `--raw --agents` rejected with error about mutual exclusivity
+- Added imports: `readFileSync` from `node:fs`, `parse as yamlParse` from `yaml`
+- Files changed: `src/commands/config.ts`
+- **Learnings:**
+  - `resolveHivePath()` returns the `.hive/` directory path, so config file is at `resolve(hivePath, 'config.yaml')`
+  - The `yaml` package's `parse` function was not previously imported since config loading is done in `core/config.ts`
+---
+

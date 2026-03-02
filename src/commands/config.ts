@@ -1,7 +1,8 @@
 import { Command } from 'commander';
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 import chalk from 'chalk';
-import { stringify as yamlStringify } from 'yaml';
+import { parse as yamlParse, stringify as yamlStringify } from 'yaml';
 import {
   loadConfig,
   resolveHiveRoot,
@@ -29,6 +30,14 @@ async function runConfig(
   cwd: string,
   opts: { raw?: boolean; json?: boolean; agents?: boolean },
 ): Promise<void> {
+  // ── Mutual exclusivity check ──────────────────────────────────────
+  if (opts.raw && opts.agents) {
+    console.error(
+      chalk.red('Error: --raw and --agents are mutually exclusive'),
+    );
+    process.exit(1);
+  }
+
   let config;
   let hiveRoot: string;
   let hivePath: string;
@@ -41,6 +50,21 @@ async function runConfig(
     const msg = err instanceof Error ? err.message : String(err);
     console.error(chalk.red(`Error: ${msg}`));
     process.exit(1);
+  }
+
+  // ── Raw mode ─────────────────────────────────────────────────────
+  if (opts.raw) {
+    const configPath = resolve(hivePath, 'config.yaml');
+    const raw = readFileSync(configPath, 'utf-8');
+
+    if (opts.json) {
+      const parsed = yamlParse(raw);
+      console.log(JSON.stringify(parsed, null, 2));
+      return;
+    }
+
+    console.log(raw);
+    return;
   }
 
   // ── Agents-only mode ───────────────────────────────────────────────
