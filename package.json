@@ -1,0 +1,47 @@
+{
+  "name": "agenthive",
+  "version": "0.1.0",
+  "description": "Multi-agent orchestrator for Claude Code — coordination, cost control, and observability for parallel AI agents on any git repository.",
+  "type": "module",
+  "bin": {
+    "hive": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:bundle": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/hive.mjs --banner:js='#!/usr/bin/env node' --packages=external",
+    "build:binary": "./scripts/build-binary.sh",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:cov": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit && vitest run"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "agent",
+    "multi-agent",
+    "orchestration",
+    "ai",
+    "devtools"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^8.3.0",
+    "chalk": "^5.6.2",
+    "chokidar": "^5.0.0",
+    "commander": "^14.0.3",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "esbuild": "^0.27.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

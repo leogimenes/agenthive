@@ -1,0 +1,60 @@
+# AgentHive configuration
+# This file defines the agents, budgets, and coordination settings for your hive.
+# Docs: https://github.com/agenthive/agenthive
+
+# tmux session name (default: current directory name)
+session: my-project
+
+# Default values applied to all agents unless overridden
+defaults:
+  poll: 60                      # seconds between chat file checks
+  budget: 2.00                  # max USD per task invocation
+  daily_max: 20.00              # max USD per agent per day
+  skip_permissions: true        # pass --dangerously-skip-permissions to claude
+
+# Agent definitions
+# Each agent gets a git worktree and a polling loop.
+# The `agent` field maps to .claude/agents/<agent>.md in the worktree.
+agents:
+  sre:
+    description: "Site Reliability Engineer"
+    agent: sre
+    # poll: 60                  # inherits from defaults
+    # budget: 2.00              # inherits from defaults
+
+  frontend:
+    description: "Frontend Developer"
+    agent: frontend
+    poll: 90                    # slower poll for frontend work
+
+  backend:
+    description: "Backend Engineer"
+    agent: backend
+    budget: 3.00                # higher budget for complex tasks
+
+  qa:
+    description: "Quality Analyst"
+    agent: qa
+    poll: 90
+
+# Chat file coordination
+chat:
+  file: chat.md                 # relative to .hive/
+  role_map:                     # agent name → role tag in chat messages
+    sre: SRE
+    frontend: FRONTEND
+    backend: BACKEND
+    qa: QA
+
+# Hooks — executed by Claude Code during agent runs
+hooks:
+  # Safety hooks (ship with AgentHive)
+  safety:
+    - destructive-guard         # blocks rm -rf, git reset --hard, etc.
+  # Coordination hooks (ship with AgentHive)
+  coordination:
+    - check-chat                # injects chat messages into Claude's context
+  # Add your own project-specific hooks:
+  # custom:
+  #   - path/to/my-typecheck-hook.sh
+  #   - path/to/my-lint-hook.sh

@@ -1,0 +1,14 @@
+{
+  "id": "e23699d1-221b-48f5-81b9-30b432e3591b",
+  "status": "running",
+  "startedAt": "2026-03-02T18:45:22.288Z",
+  "updatedAt": "2026-03-02T18:45:22.288Z",
+  "agentPlugin": "claude",
+  "trackerPlugin": "beads-bv",
+  "epicId": "agenthive-a29",
+  "currentIteration": 0,
+  "maxIterations": 10,
+  "totalTasks": 0,
+  "tasksCompleted": 0,
+  "cwd": "/home/leonardosg/repos/projects/agenthive"
+}

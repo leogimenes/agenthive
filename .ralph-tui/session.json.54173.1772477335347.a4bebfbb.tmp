@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "sessionId": "e23699d1-221b-48f5-81b9-30b432e3591b",
+  "status": "running",
+  "startedAt": "2026-03-02T18:45:22.532Z",
+  "updatedAt": "2026-03-02T18:48:55.346Z",
+  "currentIteration": 0,
+  "maxIterations": 10,
+  "tasksCompleted": 0,
+  "isPaused": false,
+  "agentPlugin": "claude",
+  "trackerState": {
+    "plugin": "beads-bv",
+    "epicId": "agenthive-a29",
+    "totalTasks": 6,
+    "tasks": [
+      {
+        "id": "agenthive-a29.1",
+        "title": "US-001: Hook registration with Claude Code",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-a29.2",
+        "title": "US-002: Hook files shipped in compiled builds",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-a29.3",
+        "title": "US-003: Shell injection prevention in tmux commands",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-a29.4",
+        "title": "US-004: Honest error message when .hive/ already exists",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-a29.5",
+        "title": "US-005: Working `--raw` flag on `hive config`",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-a29.6",
+        "title": "US-006: Model field in generated config",
+        "status": "open",
+        "completedInSession": false
+      }
+    ]
+  },
+  "iterations": [],
+  "skippedTaskIds": [],
+  "cwd": "/home/leonardosg/repos/projects/agenthive",
+  "activeTaskIds": [],
+  "subagentPanelVisible": false
+}
