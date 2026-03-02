@@ -1,0 +1,13 @@
+node_modules/
+dist/
+bin/
+.hive/worktrees/
+.hive/state/
+*.tgz
+coverage/
+.env
+.env.*
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
