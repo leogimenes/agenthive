@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "postbuild": "mkdir -p dist/hooks && cp src/hooks/*.sh dist/hooks/",
     "build:bundle": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/hive.mjs --banner:js='#!/usr/bin/env node' --packages=external",
     "build:binary": "./scripts/build-binary.sh",
     "dev": "tsx src/index.ts",

@@ -3,10 +3,10 @@
   "sessionId": "e23699d1-221b-48f5-81b9-30b432e3591b",
   "status": "running",
   "startedAt": "2026-03-02T18:45:22.532Z",
-  "updatedAt": "2026-03-02T18:45:27.311Z",
-  "currentIteration": 0,
+  "updatedAt": "2026-03-02T18:48:56.583Z",
+  "currentIteration": 1,
   "maxIterations": 10,
-  "tasksCompleted": 0,
+  "tasksCompleted": 1,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -17,8 +17,8 @@
       {
         "id": "agenthive-a29.1",
         "title": "US-001: Hook registration with Claude Code",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "agenthive-a29.2",
@@ -52,11 +52,22 @@
       }
     ]
   },
-  "iterations": [],
+  "iterations": [
+    {
+      "iteration": 1,
+      "status": "completed",
+      "taskId": "agenthive-a29.1",
+      "taskTitle": "US-001: Hook registration with Claude Code",
+      "taskCompleted": true,
+      "durationMs": 207963,
+      "startedAt": "2026-03-02T18:45:27.224Z",
+      "endedAt": "2026-03-02T18:48:55.187Z"
+    }
+  ],
   "skippedTaskIds": [],
   "cwd": "/home/leonardosg/repos/projects/agenthive",
   "activeTaskIds": [
-    "agenthive-a29.1"
+    "agenthive-a29.2"
   ],
   "subagentPanelVisible": false
 }

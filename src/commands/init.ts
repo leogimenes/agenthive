@@ -1,16 +1,13 @@
 import { Command } from 'commander';
-import { existsSync, mkdirSync, copyFileSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
-import { join, resolve, basename, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { join, resolve, basename } from 'node:path';
 import { checkbox } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { stringify as toYaml } from 'yaml';
 import { createWorktree, isGitRepo, getMainBranch } from '../core/worktree.js';
 import { initChatFile } from '../core/chat.js';
+import { EMBEDDED_HOOKS } from '../hooks/embedded.js';
 import type { HiveConfig, AgentConfig, DefaultsConfig } from '../types/config.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 // ── Presets ─────────────────────────────────────────────────────────
 
@@ -248,19 +245,20 @@ function buildConfig(
 }
 
 function copyHooks(hivePath: string): void {
-  // Find hooks relative to the built module
-  const hooksSource = join(__dirname, '..', 'hooks');
   const hooksDest = join(hivePath, 'hooks');
+  const hookNames = ['destructive-guard', 'check-chat'];
 
-  const hookFiles = ['destructive-guard.sh', 'check-chat.sh'];
+  for (const hookName of hookNames) {
+    const destPath = join(hooksDest, `${hookName}.sh`);
+    const embedded = EMBEDDED_HOOKS[hookName];
 
-  for (const hookFile of hookFiles) {
-    const srcPath = join(hooksSource, hookFile);
-    const destPath = join(hooksDest, hookFile);
-
-    if (existsSync(srcPath)) {
-      copyFileSync(srcPath, destPath);
+    if (embedded) {
+      writeFileSync(destPath, embedded, 'utf-8');
       chmodSync(destPath, 0o755);
+    } else {
+      console.warn(
+        chalk.yellow(`Warning: hook "${hookName}" not found in embedded hooks — skipping`),
+      );
     }
   }
 }
