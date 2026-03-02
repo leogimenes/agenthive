@@ -114,6 +114,9 @@ export interface ChatMessage {
 
   /** Line number in the chat file (1-indexed). */
   lineNumber: number;
+
+  /** ISO 8601 timestamp when the message was written. */
+  timestamp?: string;
 }
 
 /** Result of a git worktree operation. */

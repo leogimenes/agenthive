@@ -295,10 +295,11 @@ After completing:
 1. Run your build gate and test gate
 2. Commit your changes with your standard commit message format
 3. Append a DONE message to the chat file at \`${this.chatFilePath}\`:
-   \`[${this.agent.chatRole}] DONE: <brief summary of what was completed>\`
+   \`[${this.agent.chatRole}] DONE <ISO8601_TIMESTAMP>: <brief summary of what was completed>\`
+   Example: \`[${this.agent.chatRole}] DONE <2026-03-02T12:34:56.789Z>: implemented pagination\`
 
 If you cannot complete the task, append a BLOCKER message instead:
-   \`[${this.agent.chatRole}] BLOCKER: <what went wrong and what is needed>\``;
+   \`[${this.agent.chatRole}] BLOCKER <ISO8601_TIMESTAMP>: <what went wrong and what is needed>\``;
   }
 
   // ── Logging ─────────────────────────────────────────────────────

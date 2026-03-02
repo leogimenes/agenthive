@@ -96,3 +96,22 @@ after each iteration and it's included in prompts for context.
 - **Learnings:**
   - No additional work needed — bead closed immediately after verification
 ---
+
+## 2026-03-02 - agenthive-07s.1
+- Implemented US-001: Chat message timestamps — every chat message now includes an ISO 8601 timestamp
+- New wire format: `[ROLE] TYPE <ISO8601>: body` (backward-compatible with legacy `[ROLE] TYPE: body`)
+- Files modified:
+  - `src/types/config.ts` — Added optional `timestamp` field to `ChatMessage` interface
+  - `src/core/chat.ts` — Updated `appendMessage` to include timestamps, added `MESSAGE_REGEX_TS` for new format, `parseMessages` tries timestamped format first then falls back to legacy
+  - `src/core/colors.ts` — Added `timeAgo()` and `formatTimestamp()` helpers, updated `formatMessage()` to show HH:MM:SS
+  - `src/commands/status.ts` — Shows "(2m ago)" relative time in LAST ACTIVITY column
+  - `src/commands/tail.ts` — Raw mode outputs timestamp in `<ISO8601>` format
+  - `src/tui/components/ChatPanel.tsx` — Displays HH:MM:SS timestamp in message lines
+  - `src/core/polling.ts` — Updated agent prompt to instruct timestamp format
+  - `tests/core/chat.test.ts` — Updated existing tests for new format, added timestamp parsing and legacy backward-compat tests
+- Quality gates: typecheck clean, 113/113 tests pass (1 new), build succeeds
+- **Learnings:**
+  - Backward-compatible regex approach: try new format first, fall back to legacy — avoids breaking existing chat files
+  - `timestamp` field is optional on `ChatMessage` to support both old and new messages in the same file
+  - `timeAgo()` is useful for both CLI status and TUI — placed in shared `colors.ts` module
+---

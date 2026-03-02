@@ -11,7 +11,7 @@ const CHAT_HEADER = `# HIVE — Inter-Agent Coordination Log
 #
 # ## Message Format
 #
-#   [ROLE] TYPE: message body
+#   [ROLE] TYPE <ISO8601>: message body
 #
 #   TYPE is one of:
 #     STATUS   — Progress update on current work
@@ -35,6 +35,9 @@ const CHAT_HEADER = `# HIVE — Inter-Agent Coordination Log
 
 // ── Message format regex ────────────────────────────────────────────
 
+// New format: [ROLE] TYPE <2026-03-02T12:34:56.789Z>: body
+const MESSAGE_REGEX_TS = /^\[([A-Z_]+)\]\s+(STATUS|DONE|REQUEST|QUESTION|BLOCKER|ACK|WARN)\s+<(\d{4}-\d{2}-\d{2}T[^>]+)>:\s*(.+)$/;
+// Legacy format (no timestamp): [ROLE] TYPE: body
 const MESSAGE_REGEX = /^\[([A-Z_]+)\]\s+(STATUS|DONE|REQUEST|QUESTION|BLOCKER|ACK|WARN):\s*(.+)$/;
 
 const VALID_TYPES = new Set<string>([
@@ -54,7 +57,7 @@ export function initChatFile(hivePath: string, fileName = 'chat.md'): string {
 
 /**
  * Append a message to the chat file.
- * Format: [ROLE] TYPE: body
+ * Format: [ROLE] TYPE <ISO8601>: body
  */
 export function appendMessage(
   chatFilePath: string,
@@ -66,7 +69,8 @@ export function appendMessage(
     throw new Error(`Invalid message type: ${type}`);
   }
 
-  const line = `[${role.toUpperCase()}] ${type}: ${body.trim()}\n`;
+  const ts = new Date().toISOString();
+  const line = `[${role.toUpperCase()}] ${type} <${ts}>: ${body.trim()}\n`;
   appendFileSync(chatFilePath, line, 'utf-8');
 }
 
@@ -149,6 +153,20 @@ function parseMessages(content: string, lineOffset = 0): ChatMessage[] {
     // Skip comments and empty lines
     if (!line || line.startsWith('#')) continue;
 
+    // Try timestamped format first
+    const tsMatch = line.match(MESSAGE_REGEX_TS);
+    if (tsMatch) {
+      messages.push({
+        role: tsMatch[1],
+        type: tsMatch[2] as MessageType,
+        body: tsMatch[4],
+        lineNumber: lineOffset + i + 1,
+        timestamp: tsMatch[3],
+      });
+      continue;
+    }
+
+    // Fall back to legacy format (no timestamp)
     const match = line.match(MESSAGE_REGEX);
     if (match) {
       messages.push({

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -31,7 +31,7 @@ describe('chat', () => {
     it('should create a chat file with protocol header', () => {
       const content = readFileSync(chatFilePath, 'utf-8');
       expect(content).toContain('# HIVE — Inter-Agent Coordination Log');
-      expect(content).toContain('[ROLE] TYPE: message body');
+      expect(content).toContain('[ROLE] TYPE <ISO8601>: message body');
     });
 
     it('should return the absolute path', () => {
@@ -47,22 +47,22 @@ describe('chat', () => {
   // ── appendMessage ─────────────────────────────────────────────────
 
   describe('appendMessage', () => {
-    it('should append a correctly formatted message', () => {
+    it('should append a correctly formatted message with timestamp', () => {
       appendMessage(chatFilePath, 'SRE', 'DONE', 'fixed the thing');
       const content = readFileSync(chatFilePath, 'utf-8');
-      expect(content).toContain('[SRE] DONE: fixed the thing');
+      expect(content).toMatch(/\[SRE\] DONE <\d{4}-\d{2}-\d{2}T[^>]+>: fixed the thing/);
     });
 
     it('should uppercase the role', () => {
       appendMessage(chatFilePath, 'sre', 'STATUS', 'working on it');
       const content = readFileSync(chatFilePath, 'utf-8');
-      expect(content).toContain('[SRE] STATUS: working on it');
+      expect(content).toMatch(/\[SRE\] STATUS <[^>]+>: working on it/);
     });
 
     it('should trim whitespace from body', () => {
       appendMessage(chatFilePath, 'PM', 'REQUEST', '  do something  ');
       const content = readFileSync(chatFilePath, 'utf-8');
-      expect(content).toContain('[PM] REQUEST: do something');
+      expect(content).toMatch(/\[PM\] REQUEST <[^>]+>: do something/);
     });
 
     it('should reject invalid message types', () => {
@@ -96,7 +96,7 @@ describe('chat', () => {
       expect(messages).toEqual([]);
     });
 
-    it('should parse messages correctly', () => {
+    it('should parse messages correctly with timestamp', () => {
       appendMessage(chatFilePath, 'SRE', 'DONE', 'implemented BE-08 (3cb91c9)');
       const messages = readMessages(chatFilePath);
       expect(messages).toHaveLength(1);
@@ -106,6 +106,21 @@ describe('chat', () => {
         body: 'implemented BE-08 (3cb91c9)',
       });
       expect(messages[0].lineNumber).toBeGreaterThan(0);
+      expect(messages[0].timestamp).toBeDefined();
+      expect(new Date(messages[0].timestamp!).toISOString()).toBe(messages[0].timestamp);
+    });
+
+    it('should parse legacy messages without timestamps', () => {
+      // Manually write a legacy-format message (no timestamp)
+      appendFileSync(chatFilePath, '[SRE] DONE: legacy message\n', 'utf-8');
+      const messages = readMessages(chatFilePath);
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({
+        role: 'SRE',
+        type: 'DONE',
+        body: 'legacy message',
+      });
+      expect(messages[0].timestamp).toBeUndefined();
     });
 
     it('should skip comment lines and blank lines', () => {

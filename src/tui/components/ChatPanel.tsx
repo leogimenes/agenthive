@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Box, Text } from 'ink';
 import type { ChatMessage, MessageType } from '../../types/config.js';
-import { getRoleColorName, TYPE_STYLE_MAP } from '../../core/colors.js';
+import { getRoleColorName, TYPE_STYLE_MAP, formatTimestamp } from '../../core/colors.js';
 import type { TypeStyleInfo } from '../../core/colors.js';
 
 interface ChatPanelProps {
@@ -18,6 +18,8 @@ function MessageLine({ msg, isNew }: { msg: ChatMessage; isNew: boolean }): Reac
   const roleColor = getRoleColorName(msg.role);
   const typeInfo: TypeStyleInfo = TYPE_STYLE_MAP[msg.type] ?? { color: 'white' };
 
+  const ts = msg.timestamp ? formatTimestamp(msg.timestamp) : '';
+
   return (
     <Box>
       <Text bold={isNew}>
@@ -26,6 +28,7 @@ function MessageLine({ msg, isNew }: { msg: ChatMessage; isNew: boolean }): Reac
         <Text color={typeInfo.color} bold={typeInfo.bold} dimColor={typeInfo.dim}>
           {msg.type}
         </Text>
+        {ts ? <Text dimColor> {ts}</Text> : null}
         <Text>: {msg.body}</Text>
       </Text>
     </Box>

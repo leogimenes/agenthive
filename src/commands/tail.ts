@@ -164,7 +164,8 @@ function applyFilters(
 
 function printMessage(msg: ChatMessage, raw?: boolean): void {
   if (raw) {
-    console.log(`[${msg.role}] ${msg.type}: ${msg.body}`);
+    const ts = msg.timestamp ? ` <${msg.timestamp}>` : '';
+    console.log(`[${msg.role}] ${msg.type}${ts}: ${msg.body}`);
   } else {
     console.log(formatMessage(msg));
   }

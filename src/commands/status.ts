@@ -5,6 +5,7 @@ import { loadConfig, resolveHiveRoot, resolveHivePath, resolveAllAgents } from '
 import { getLockStatus } from '../core/lock.js';
 import { getDailySpend } from '../core/budget.js';
 import { readMessages, resolveChatPath } from '../core/chat.js';
+import { timeAgo } from '../core/colors.js';
 
 export function registerStatusCommand(program: Command): void {
   program
@@ -65,6 +66,14 @@ async function runStatus(
       status = 'STOPPED';
     }
 
+    const lastActivityTime = lastMsg?.timestamp
+      ? new Date(lastMsg.timestamp)
+      : undefined;
+
+    const timeStr = lastMsg?.timestamp
+      ? timeAgo(lastMsg.timestamp)
+      : undefined;
+
     return {
       name: agent.name,
       role: agent.chatRole,
@@ -75,6 +84,8 @@ async function runStatus(
       lastActivity: lastMsg
         ? `${lastMsg.type}: ${truncate(lastMsg.body, 60)}`
         : undefined,
+      lastActivityTime,
+      lastActivityAgo: timeStr,
     };
   });
 
@@ -131,7 +142,10 @@ async function runStatus(
       spendStyled + ' '.repeat(Math.max(0, COL.spend - spendPlain.length));
 
     // Activity
-    const activityCol = s.lastActivity ?? chalk.gray('—');
+    const agoSuffix = s.lastActivityAgo ? chalk.gray(` (${s.lastActivityAgo})`) : '';
+    const activityCol = s.lastActivity
+      ? `${s.lastActivity}${agoSuffix}`
+      : chalk.gray('—');
 
     console.log(`${nameCol}${statusCol}${spendCol}${activityCol}`);
   }
