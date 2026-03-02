@@ -3,10 +3,10 @@
   "sessionId": "e23699d1-221b-48f5-81b9-30b432e3591b",
   "status": "running",
   "startedAt": "2026-03-02T18:45:22.532Z",
-  "updatedAt": "2026-03-02T18:54:02.859Z",
-  "currentIteration": 1,
+  "updatedAt": "2026-03-02T18:58:39.232Z",
+  "currentIteration": 2,
   "maxIterations": 10,
-  "tasksCompleted": 1,
+  "tasksCompleted": 2,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -23,8 +23,8 @@
       {
         "id": "agenthive-a29.2",
         "title": "US-002: Hook files shipped in compiled builds",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "agenthive-a29.3",
@@ -62,6 +62,16 @@
       "durationMs": 207963,
       "startedAt": "2026-03-02T18:45:27.224Z",
       "endedAt": "2026-03-02T18:48:55.187Z"
+    },
+    {
+      "iteration": 2,
+      "status": "completed",
+      "taskId": "agenthive-a29.2",
+      "taskTitle": "US-002: Hook files shipped in compiled builds",
+      "taskCompleted": true,
+      "durationMs": 306186,
+      "startedAt": "2026-03-02T18:48:56.501Z",
+      "endedAt": "2026-03-02T18:54:02.687Z"
     }
   ],
   "skippedTaskIds": [],

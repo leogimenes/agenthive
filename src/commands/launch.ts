@@ -1,9 +1,10 @@
 import { Command } from 'commander';
-import { execSync, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import chalk from 'chalk';
 import { loadConfig, resolveHiveRoot, resolveHivePath, resolveAllAgents } from '../core/config.js';
 import { getLockStatus } from '../core/lock.js';
+import { tmux, tmuxSessionExists, shellQuote } from '../core/tmux.js';
 import type { ResolvedAgentConfig } from '../types/config.js';
 
 export function registerLaunchCommand(program: Command): void {
@@ -121,7 +122,7 @@ async function runLaunch(
   // Check / kill existing tmux session
   if (tmuxSessionExists(sessionName)) {
     if (opts.force) {
-      execSync(`tmux kill-session -t ${sessionName}`, { stdio: 'ignore' });
+      tmux(['kill-session', '-t', sessionName], { stdio: 'ignore' });
       console.log(chalk.gray(`Killed existing tmux session: ${sessionName}`));
     } else {
       console.error(
@@ -153,14 +154,14 @@ async function runLaunch(
     const loopCmd = buildLoopCommand(hiveBin, agent.name, hiveRoot);
 
     if (first) {
-      execSync(
-        `tmux new-session -d -s ${sessionName} -n ${agent.name} '${loopCmd}'`,
+      tmux(
+        ['new-session', '-d', '-s', sessionName, '-n', agent.name, loopCmd],
         { stdio: 'ignore' },
       );
       first = false;
     } else {
-      execSync(
-        `tmux new-window -t ${sessionName} -n ${agent.name} '${loopCmd}'`,
+      tmux(
+        ['new-window', '-t', sessionName, '-n', agent.name, loopCmd],
         { stdio: 'ignore' },
       );
     }
@@ -184,7 +185,7 @@ async function runLaunch(
   console.log('');
 
   if (opts.attach) {
-    execSync(`tmux attach -t ${sessionName}`, { stdio: 'inherit' });
+    tmux(['attach', '-t', sessionName], { stdio: 'inherit' });
   }
 }
 
@@ -231,15 +232,6 @@ function commandExists(cmd: string): boolean {
   }
 }
 
-function tmuxSessionExists(name: string): boolean {
-  try {
-    execSync(`tmux has-session -t ${name}`, { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function buildLoopCommand(
   hiveBin: string,
   agentName: string,
@@ -247,12 +239,13 @@ function buildLoopCommand(
 ): string {
   // Detect if running via tsx (development) or compiled
   const isTsx = hiveBin.endsWith('.ts') || process.argv[0].includes('tsx');
+  const q = shellQuote;
 
   if (isTsx) {
     // Dev mode: use tsx to run the TS source
-    return `npx tsx ${hiveBin} --cwd ${hiveRoot} _loop ${agentName}`;
+    return `npx tsx ${q(hiveBin)} --cwd ${q(hiveRoot)} _loop ${q(agentName)}`;
   }
 
   // Production: run the compiled JS directly
-  return `node ${hiveBin} --cwd ${hiveRoot} _loop ${agentName}`;
+  return `node ${q(hiveBin)} --cwd ${q(hiveRoot)} _loop ${q(agentName)}`;
 }

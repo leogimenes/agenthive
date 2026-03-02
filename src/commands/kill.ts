@@ -1,9 +1,9 @@
 import { Command } from 'commander';
-import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import chalk from 'chalk';
 import { loadConfig, resolveHiveRoot, resolveHivePath } from '../core/config.js';
 import { getLockStatus, releaseLock } from '../core/lock.js';
+import { tmux, tmuxSessionExists } from '../core/tmux.js';
 
 export function registerKillCommand(program: Command): void {
   program
@@ -38,7 +38,7 @@ async function runKill(cwd: string, agentFilter: string[]): Promise<void> {
   if (agentFilter.length === 0) {
     // Kill entire tmux session
     if (tmuxSessionExists(sessionName)) {
-      execSync(`tmux kill-session -t ${sessionName}`, { stdio: 'ignore' });
+      tmux(['kill-session', '-t', sessionName], { stdio: 'ignore' });
       console.log(chalk.green(`✓ Killed tmux session: ${sessionName}`));
     } else {
       console.log(chalk.gray(`No tmux session found: ${sessionName}`));
@@ -73,7 +73,7 @@ async function runKill(cwd: string, agentFilter: string[]): Promise<void> {
       // Kill tmux window
       if (tmuxSessionExists(sessionName)) {
         try {
-          execSync(`tmux kill-window -t ${sessionName}:${name}`, {
+          tmux(['kill-window', '-t', `${sessionName}:${name}`], {
             stdio: 'ignore',
           });
           console.log(`  ${chalk.green('✓')} Killed window: ${name}`);
@@ -96,14 +96,5 @@ async function runKill(cwd: string, agentFilter: string[]): Promise<void> {
         console.log(`  ${chalk.gray('  Lock released')}`);
       }
     }
-  }
-}
-
-function tmuxSessionExists(name: string): boolean {
-  try {
-    execSync(`tmux has-session -t ${name}`, { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
   }
 }
