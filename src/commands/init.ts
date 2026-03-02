@@ -212,6 +212,7 @@ function buildConfig(
     poll: 60,
     budget: 2.0,
     daily_max: 20.0,
+    model: 'sonnet',
     skip_permissions: true,
   };
 

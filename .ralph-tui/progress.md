@@ -74,3 +74,11 @@ after each iteration and it's included in prompts for context.
   - The `yaml` package's `parse` function was not previously imported since config loading is done in `core/config.ts`
 ---
 
+## 2026-03-02 - agenthive-a29.6
+- Added `model: 'sonnet'` to `buildConfig()` defaults in `src/commands/init.ts`
+- Generated `config.yaml` now includes the model field under defaults, matching the runtime defaults in `core/config.ts`
+- Files changed: `src/commands/init.ts`
+- **Learnings:**
+  - The `DEFAULT_DEFAULTS` in `core/config.ts` and the `buildConfig()` defaults in `init.ts` must be kept in sync — easy to miss when adding new fields to one but not the other
+---
+
