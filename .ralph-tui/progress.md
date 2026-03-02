@@ -48,3 +48,11 @@ after each iteration and it's included in prompts for context.
   - `useStdout().stdout.rows` provides terminal height for dynamic layout sizing
   - For ink components, color names (strings) work with `<Text color="cyan">` — no need for chalk in React components
 ---
+
+## 2026-03-02 - agenthive-ady.1
+- Verified US-001 (TUI framework scaffold and base layout) was already fully implemented in prior iteration
+- All acceptance criteria met: `hive ui`/`hive tui` command, ink+react framework, 3-panel layout (status/chat/input), header bar, q/Ctrl+C exit, `src/tui/` isolation
+- Quality gates: typecheck clean, 67/67 tests pass
+- **Learnings:**
+  - No additional work needed — bead closed immediately after verification
+---

@@ -3,10 +3,10 @@
   "sessionId": "567b3db8-4003-4396-989f-6241be96610e",
   "status": "running",
   "startedAt": "2026-03-02T19:11:08.621Z",
-  "updatedAt": "2026-03-02T19:20:34.936Z",
-  "currentIteration": 0,
+  "updatedAt": "2026-03-02T19:21:21.859Z",
+  "currentIteration": 1,
   "maxIterations": 10,
-  "tasksCompleted": 0,
+  "tasksCompleted": 1,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -16,8 +16,8 @@
       {
         "id": "agenthive-ady",
         "title": "Terminal UI",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "agenthive-07s.1",
@@ -285,7 +285,18 @@
       }
     ]
   },
-  "iterations": [],
+  "iterations": [
+    {
+      "iteration": 1,
+      "status": "completed",
+      "taskId": "agenthive-ady",
+      "taskTitle": "Terminal UI",
+      "taskCompleted": true,
+      "durationMs": 566070,
+      "startedAt": "2026-03-02T19:11:08.771Z",
+      "endedAt": "2026-03-02T19:20:34.841Z"
+    }
+  ],
   "skippedTaskIds": [],
   "cwd": "/home/leonardosg/repos/projects/agenthive",
   "activeTaskIds": [],
