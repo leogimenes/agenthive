@@ -9,45 +9,8 @@ import {
   resolveChatPath,
   getChatLineCount,
 } from '../core/chat.js';
+import { formatMessage } from '../core/colors.js';
 import type { ChatMessage } from '../types/config.js';
-
-// ── Color palette ────────────────────────────────────────────────────
-
-const ROLE_COLORS: Record<string, (s: string) => string> = {};
-const PALETTE = [
-  chalk.cyan,
-  chalk.magenta,
-  chalk.yellow,
-  chalk.green,
-  chalk.blue,
-  chalk.redBright,
-  chalk.whiteBright,
-  chalk.cyanBright,
-];
-
-function getRoleColor(role: string): (s: string) => string {
-  if (!ROLE_COLORS[role]) {
-    const idx = Object.keys(ROLE_COLORS).length % PALETTE.length;
-    ROLE_COLORS[role] = PALETTE[idx];
-  }
-  return ROLE_COLORS[role];
-}
-
-const TYPE_STYLES: Record<string, (s: string) => string> = {
-  REQUEST: chalk.bold.yellow,
-  DONE: chalk.bold.green,
-  BLOCKER: chalk.bold.red,
-  WARN: chalk.yellow,
-  STATUS: chalk.gray,
-  QUESTION: chalk.cyan,
-  ACK: chalk.dim,
-};
-
-function formatMessage(msg: ChatMessage): string {
-  const roleColor = getRoleColor(msg.role);
-  const typeStyle = TYPE_STYLES[msg.type] ?? chalk.white;
-  return `${roleColor(`[${msg.role}]`)} ${typeStyle(msg.type)}: ${msg.body}`;
-}
 
 // ── Command registration ─────────────────────────────────────────────
 

@@ -1,113 +1,293 @@
 {
   "version": 1,
-  "sessionId": "e23699d1-221b-48f5-81b9-30b432e3591b",
+  "sessionId": "567b3db8-4003-4396-989f-6241be96610e",
   "status": "running",
-  "startedAt": "2026-03-02T18:45:22.532Z",
-  "updatedAt": "2026-03-02T19:00:59.003Z",
-  "currentIteration": 5,
+  "startedAt": "2026-03-02T19:11:08.621Z",
+  "updatedAt": "2026-03-02T19:20:34.936Z",
+  "currentIteration": 0,
   "maxIterations": 10,
-  "tasksCompleted": 5,
+  "tasksCompleted": 0,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
     "plugin": "beads-bv",
-    "epicId": "agenthive-a29",
-    "totalTasks": 6,
+    "totalTasks": 45,
     "tasks": [
+      {
+        "id": "agenthive-ady",
+        "title": "Terminal UI",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-07s.1",
+        "title": "US-001: Chat message timestamps",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-hym",
+        "title": "Planning and Task Tracking",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-07s.2",
+        "title": "US-002: Desktop notifications on agent events",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-07s.3",
+        "title": "US-003: Orchestrated rebase and push",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-07s",
+        "title": "Feature Improvements",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-a29",
+        "title": "Bug Fixes",
+        "status": "completed",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-07s.4",
+        "title": "US-004: Shell completions for bash, zsh, and fish",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-9b5",
+        "title": "Agent Definition Templates",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-07s.5",
+        "title": "US-005: Installation script",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-07s.6",
+        "title": "US-006: Claude Code transcript viewer",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-07s.7",
+        "title": "US-007: Cost reporting",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-07s.8",
+        "title": "US-008: Session recovery after crash",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-07s.9",
+        "title": "US-009: Agent health watchdog",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-07s.10",
+        "title": "US-010: Configuration profiles",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-07s.11",
+        "title": "US-011: Post-init agent management",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-9b5.1",
+        "title": "US-001: Define the template format and directory structure",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-9b5.2",
+        "title": "US-002: Write bundled templates for all standard roles",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-9b5.3",
+        "title": "US-003: Install templates during hive init",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-9b5.4",
+        "title": "US-004: Template management command",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-9b5.5",
+        "title": "US-005: User-defined template directories",
+        "status": "open",
+        "completedInSession": false
+      },
       {
         "id": "agenthive-a29.1",
         "title": "US-001: Hook registration with Claude Code",
         "status": "completed",
-        "completedInSession": true
+        "completedInSession": false
       },
       {
         "id": "agenthive-a29.2",
         "title": "US-002: Hook files shipped in compiled builds",
         "status": "completed",
-        "completedInSession": true
+        "completedInSession": false
       },
       {
         "id": "agenthive-a29.3",
         "title": "US-003: Shell injection prevention in tmux commands",
         "status": "completed",
-        "completedInSession": true
+        "completedInSession": false
       },
       {
         "id": "agenthive-a29.4",
         "title": "US-004: Honest error message when .hive/ already exists",
         "status": "completed",
-        "completedInSession": true
+        "completedInSession": false
       },
       {
         "id": "agenthive-a29.5",
         "title": "US-005: Working `--raw` flag on `hive config`",
         "status": "completed",
-        "completedInSession": true
+        "completedInSession": false
       },
       {
         "id": "agenthive-a29.6",
         "title": "US-006: Model field in generated config",
+        "status": "completed",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-ady.1",
+        "title": "US-001: TUI framework scaffold and base layout",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-ady.2",
+        "title": "US-002: Live agent status panel",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-ady.3",
+        "title": "US-003: Live chat panel",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-ady.4",
+        "title": "US-004: Dispatch input bar",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-ady.5",
+        "title": "US-005: Agent detail view",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-ady.6",
+        "title": "US-006: Keyboard navigation system",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-ady.7",
+        "title": "US-007: Cost overview bar",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-hym.1",
+        "title": "US-001: Plan data model and storage",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-hym.2",
+        "title": "US-002: Board view",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-hym.3",
+        "title": "US-003: Task creation",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-hym.4",
+        "title": "US-004: Ready queue",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-hym.5",
+        "title": "US-005: Chat-driven state transitions",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-hym.6",
+        "title": "US-006: Bulk import from files",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-hym.7",
+        "title": "US-007: Dependency graph visualization",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-hym.8",
+        "title": "US-008: Dispatch from plan",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-hym.9",
+        "title": "US-009: Task update, remove, and reset",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-hym.10",
+        "title": "US-010: Hierarchical task grouping",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "agenthive-hym.11",
+        "title": "US-011: Plan analytics and critical path",
         "status": "open",
         "completedInSession": false
       }
     ]
   },
-  "iterations": [
-    {
-      "iteration": 1,
-      "status": "completed",
-      "taskId": "agenthive-a29.1",
-      "taskTitle": "US-001: Hook registration with Claude Code",
-      "taskCompleted": true,
-      "durationMs": 207963,
-      "startedAt": "2026-03-02T18:45:27.224Z",
-      "endedAt": "2026-03-02T18:48:55.187Z"
-    },
-    {
-      "iteration": 2,
-      "status": "completed",
-      "taskId": "agenthive-a29.2",
-      "taskTitle": "US-002: Hook files shipped in compiled builds",
-      "taskCompleted": true,
-      "durationMs": 306186,
-      "startedAt": "2026-03-02T18:48:56.501Z",
-      "endedAt": "2026-03-02T18:54:02.687Z"
-    },
-    {
-      "iteration": 3,
-      "status": "completed",
-      "taskId": "agenthive-a29.3",
-      "taskTitle": "US-003: Shell injection prevention in tmux commands",
-      "taskCompleted": true,
-      "durationMs": 275048,
-      "startedAt": "2026-03-02T18:54:04.015Z",
-      "endedAt": "2026-03-02T18:58:39.063Z"
-    },
-    {
-      "iteration": 4,
-      "status": "completed",
-      "taskId": "agenthive-a29.4",
-      "taskTitle": "US-004: Honest error message when .hive/ already exists",
-      "taskCompleted": true,
-      "durationMs": 48544,
-      "startedAt": "2026-03-02T18:58:40.384Z",
-      "endedAt": "2026-03-02T18:59:28.928Z"
-    },
-    {
-      "iteration": 5,
-      "status": "completed",
-      "taskId": "agenthive-a29.5",
-      "taskTitle": "US-005: Working `--raw` flag on `hive config`",
-      "taskCompleted": true,
-      "durationMs": 87369,
-      "startedAt": "2026-03-02T18:59:30.239Z",
-      "endedAt": "2026-03-02T19:00:57.608Z"
-    }
-  ],
+  "iterations": [],
   "skippedTaskIds": [],
   "cwd": "/home/leonardosg/repos/projects/agenthive",
-  "activeTaskIds": [
-    "agenthive-a29.6"
-  ],
+  "activeTaskIds": [],
   "subagentPanelVisible": false
 }

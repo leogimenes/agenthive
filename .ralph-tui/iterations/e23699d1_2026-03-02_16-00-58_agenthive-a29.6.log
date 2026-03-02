@@ -1,0 +1,41 @@
+# Iteration 6 Log
+
+## Metadata
+
+- **Task ID**: agenthive-a29.6
+- **Task Title**: US-006: Model field in generated config
+- **Description**: As a developer running `hive init` for the first time I want the generated `config.yaml` to include `model: sonnet` in the defaults section So that `hive config` shows the correct model and I can see ...
+- **Status**: completed
+- **Task Completed**: Yes
+- **Promise Detected**: Yes
+- **Started At**: 2026-03-02T19:00:58.917Z
+- **Ended At**: 2026-03-02T19:01:53.097Z
+- **Duration**: 54s
+- **Input Tokens**: 31
+- **Output Tokens**: 2097
+- **Total Tokens**: 2128
+- **Agent**: claude
+- **Model**: claude-opus-4-6
+- **Epic**: agenthive-a29
+- **Sandbox Mode**: auto
+- **Sandbox Network**: Enabled
+--- RAW OUTPUT ---
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/config.ts[0m
+The issue is clear. In `buildConfig()` at `src/commands/init.ts:211-216`, the `defaults` object is missing the `model` field, while `src/core/config.ts:36-42` already has it in `DEFAULT_DEFAULTS`. Simple fix:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m edit: "  const defaults: DefaultsConfig = {
+    poll: 60,..." → "  const defaults: DefaultsConfig = {
+    poll: 60,..."
+Now let me run the quality checks.
+[94m[Bash][0m Run TypeScript type checking $ npm run typecheck 2>&1
+[94m[Bash][0m Run vitest tests $ npm test 2>&1
+[94m[Bash][0m Build TypeScript to dist/ $ npm run build 2>&1
+All checks pass — typecheck, 67 tests, and build all green. Now close the bead and update progress.
+[94m[Bash][0m Close the bead $ bd close agenthive-a29.6 --db /home/leonardosg/repos/projects/agenthive/.beads/beads.db --reason "Ad...
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "## 2026-03-02 - agenthive-a29.5
+- Implemented work..." → "## 2026-03-02 - agenthive-a29.5
+- Implemented work..."
+Done. Added `model: 'sonnet'` to the `defaults` object in `buildConfig()` (`src/commands/init.ts:214`). Now `hive init` generates a `config.yaml` with the model field, and `hive config` will show the correct model instead of `undefined`.
+
+<promise>COMPLETE</promise>

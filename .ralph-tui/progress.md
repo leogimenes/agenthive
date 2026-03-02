@@ -5,80 +5,46 @@ after each iteration and it's included in prompts for context.
 
 ## Codebase Patterns (Study These First)
 
-*Add reusable patterns discovered during development here.*
-
-- **Claude Code hook registration**: Settings go in `.claude/settings.json` inside each worktree. Format: `{ "hooks": { "PreToolUse": [{ "type": "command", "command": "/abs/path" }] } }`. Hook events: PreToolUse (safety), UserPromptSubmit/PostToolUse (coordination).
-- **Embedded shell scripts**: Hook `.sh` files are embedded as string constants in `src/hooks/embedded.ts` and written via `writeFileSync` in `copyHooks()`. This ensures hooks ship with tsc builds, Bun compile binaries, and npm packages. When embedding shell scripts in JS template literals, escape `\s` → `\\s`, `${VAR}` → `\${VAR}`, and trailing `\` → `\\`.
-- **Safe tmux execution**: All tmux calls go through `src/core/tmux.ts` helpers (`tmux()`, `tmuxSessionExists()`, `shellQuote()`). Uses `execFileSync('tmux', [...args])` to bypass shell interpretation. For commands that tmux itself runs in a shell (e.g. `new-session` shell-command arg), use `shellQuote()` to protect paths/names with spaces or metacharacters.
+- **Shared colors module**: Color palette, role colors, and type styles are in `src/core/colors.ts`. Both CLI commands (tail.ts) and TUI components use this shared module for consistent styling.
+- **TSX/JSX config**: tsconfig.json has `"jsx": "react-jsx"` for ink components. TSX files compile alongside regular TS files.
+- **Ink component pattern**: TUI components are in `src/tui/components/`, hooks in `src/tui/hooks/`. The App.tsx orchestrates all panels with a `useInput` handler for keyboard navigation.
+- **Import extensions**: All ESM imports use `.js` extensions even for `.tsx` files (NodeNext resolution requires this).
 
 ---
 
-## 2026-03-02 - agenthive-a29.1
-- Implemented hook registration with Claude Code in `hive init`
-- After worktree creation, `registerHooksInWorktree()` creates `.claude/settings.json` in each worktree
-- Safety hooks (`config.hooks.safety`) → mapped to `PreToolUse` events
-- Coordination hooks (`config.hooks.coordination`) → mapped to `UserPromptSubmit` + `PostToolUse` events
-- Custom hooks (`config.hooks.custom`) → mapped to `PreToolUse` events
-- All hook paths are absolute (resolved via `resolve()`)
-- Files changed: `src/commands/init.ts`
+## 2026-03-02 - agenthive-ady
+- Implemented full Terminal UI (TUI) for AgentHive using ink 6 + React 19
+- All 7 user stories implemented:
+  - US-001: TUI framework scaffold - `hive ui` / `hive tui` command, base 3-panel layout
+  - US-002: Live agent status panel - polls every 3s, shows status/spend/activity per agent
+  - US-003: Live chat panel - file watching via `watchFile`, auto-scroll, role/type filters
+  - US-004: Dispatch input bar - `<target> <message>` format, tab-completion, /from /warn prefix commands, history
+  - US-005: Agent detail view - git info, recent messages, spend breakdown for selected agent
+  - US-006: Keyboard navigation - vim-style j/k, Tab cycle, 1/2/3 panel jump, ? help overlay
+  - US-007: Cost overview bar - progress bar with color coding, per-agent breakdown, ⚠ warning
+- Files created:
+  - `src/core/colors.ts` - Shared color palette extracted from tail.ts
+  - `src/tui/App.tsx` - Main TUI application component
+  - `src/tui/keybindings.ts` - Keybinding definitions and help entries
+  - `src/tui/hooks/useAgentStatus.ts` - Status polling hook
+  - `src/tui/hooks/useChatMessages.ts` - Chat file watching hook
+  - `src/tui/components/Header.tsx` - Session info header
+  - `src/tui/components/CostBar.tsx` - Budget progress bar
+  - `src/tui/components/StatusPanel.tsx` - Agent status table
+  - `src/tui/components/ChatPanel.tsx` - Chat message viewer
+  - `src/tui/components/InputBar.tsx` - Dispatch input field
+  - `src/tui/components/AgentDetail.tsx` - Agent detail drill-down
+  - `src/tui/components/HelpOverlay.tsx` - Keyboard shortcut overlay
+  - `src/commands/ui.ts` - CLI command registration
+- Files modified:
+  - `src/index.ts` - Added registerUiCommand
+  - `src/commands/tail.ts` - Replaced inline colors with shared colors module
+  - `tsconfig.json` - Added `"jsx": "react-jsx"`
+  - `package.json` - Added ink, react, @types/react dependencies
 - **Learnings:**
-  - The `HiveConfig['hooks']` type works well for accessing the hooks sub-type without a separate import
-  - The `buildConfig()` function returns the config object before it's written to YAML, so it's available for `registerHooksInWorktree()` without needing to re-parse
-  - Worktrees are created at `.hive/worktrees/<name>/`, so `.claude/settings.json` goes at `.hive/worktrees/<name>/.claude/settings.json`
+  - Ink 6 uses React 19, works cleanly with TSX + NodeNext module resolution
+  - `useInput` from ink is the unified keyboard handler — one handler covers all panel modes
+  - `watchFile` with 1000ms interval is sufficient for live chat updates (same as tail.ts)
+  - `useStdout().stdout.rows` provides terminal height for dynamic layout sizing
+  - For ink components, color names (strings) work with `<Text color="cyan">` — no need for chalk in React components
 ---
-
-## 2026-03-02 - agenthive-a29.2
-- Embedded hook shell scripts as string constants in `src/hooks/embedded.ts`
-- Updated `copyHooks()` in `src/commands/init.ts` to use `writeFileSync` from embedded content instead of `copyFileSync` from filesystem
-- Added warning log when a hook name isn't found in the embedded map (was silently skipping)
-- Added `postbuild` script in `package.json` to copy `src/hooks/*.sh` → `dist/hooks/` for inspection
-- Removed unused imports (`copyFileSync`, `fileURLToPath`, `dirname`, `__dirname`/`__filename`)
-- Files changed: `src/hooks/embedded.ts` (new), `src/commands/init.ts`, `package.json`
-- **Learnings:**
-  - `tsc` only compiles `.ts` files — non-TS assets like `.sh` need a separate copy step or embedding
-  - Embedding shell scripts in JS template literals requires careful escaping: `\s` → `\\s`, `${VAR}` → `\${VAR}`, trailing `\` → `\\`
-  - Verified embedded output is byte-identical to originals by diffing node output against source files
----
-
-## 2026-03-02 - agenthive-a29.3
-- Prevented shell injection in all tmux commands across `launch.ts` and `kill.ts`
-- Created shared `src/core/tmux.ts` module with `tmux()`, `tmuxSessionExists()`, and `shellQuote()` helpers
-- Replaced all `execSync` string-interpolated tmux calls with `execFileSync('tmux', [...args])` via the helper
-- Updated `buildLoopCommand()` in `launch.ts` to shell-quote paths (hiveBin, hiveRoot, agentName) for safety
-- Removed duplicate `tmuxSessionExists()` functions from both `launch.ts` and `kill.ts`
-- Removed unused `execSync` import from `kill.ts`
-- Files changed: `src/core/tmux.ts` (new), `src/commands/launch.ts`, `src/commands/kill.ts`
-- **Learnings:**
-  - `execFileSync` bypasses shell interpretation entirely — arguments are passed directly to the executable, preventing injection
-  - tmux `new-session`/`new-window` shell-command args are still shell-interpreted by tmux itself, so paths need `shellQuote()` protection
-  - The single-quote-with-escaped-embedded-quotes pattern (`'` + replace `'` with `'\''` + `'`) is the standard POSIX shell quoting approach
----
-
-## 2026-03-02 - agenthive-a29.4
-- Fixed misleading error message when `.hive/` already exists during `hive init`
-- Replaced reference to nonexistent `hive add` command with guidance to edit `.hive/config.yaml` and use `git worktree add`
-- Files changed: `src/commands/init.ts`
-- **Learnings:**
-  - `worktree.ts` also references `hive add --force` — should be fixed if/when that file is addressed
----
-
-## 2026-03-02 - agenthive-a29.5
-- Implemented working `--raw` flag on `hive config` command
-- `--raw` reads and prints `.hive/config.yaml` as-is without resolving defaults
-- `--raw --json` parses raw YAML and outputs as JSON without default merging
-- `--raw --agents` rejected with error about mutual exclusivity
-- Added imports: `readFileSync` from `node:fs`, `parse as yamlParse` from `yaml`
-- Files changed: `src/commands/config.ts`
-- **Learnings:**
-  - `resolveHivePath()` returns the `.hive/` directory path, so config file is at `resolve(hivePath, 'config.yaml')`
-  - The `yaml` package's `parse` function was not previously imported since config loading is done in `core/config.ts`
----
-
-## 2026-03-02 - agenthive-a29.6
-- Added `model: 'sonnet'` to `buildConfig()` defaults in `src/commands/init.ts`
-- Generated `config.yaml` now includes the model field under defaults, matching the runtime defaults in `core/config.ts`
-- Files changed: `src/commands/init.ts`
-- **Learnings:**
-  - The `DEFAULT_DEFAULTS` in `core/config.ts` and the `buildConfig()` defaults in `init.ts` must be kept in sync — easy to miss when adding new fields to one but not the other
----
-
