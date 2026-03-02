@@ -76,7 +76,7 @@ async function runInit(
   if (existsSync(hivePath)) {
     console.error(
       chalk.red(
-        'Error: .hive/ already exists. Use `hive add` to add agents.',
+        'Error: .hive/ already exists. Edit .hive/config.yaml to add agents and create worktrees with `git worktree add`.',
       ),
     );
     process.exit(1);

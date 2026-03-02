@@ -54,3 +54,11 @@ after each iteration and it's included in prompts for context.
   - The single-quote-with-escaped-embedded-quotes pattern (`'` + replace `'` with `'\''` + `'`) is the standard POSIX shell quoting approach
 ---
 
+## 2026-03-02 - agenthive-a29.4
+- Fixed misleading error message when `.hive/` already exists during `hive init`
+- Replaced reference to nonexistent `hive add` command with guidance to edit `.hive/config.yaml` and use `git worktree add`
+- Files changed: `src/commands/init.ts`
+- **Learnings:**
+  - `worktree.ts` also references `hive add --force` — should be fixed if/when that file is addressed
+---
+

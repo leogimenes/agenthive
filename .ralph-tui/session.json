@@ -3,10 +3,10 @@
   "sessionId": "e23699d1-221b-48f5-81b9-30b432e3591b",
   "status": "running",
   "startedAt": "2026-03-02T18:45:22.532Z",
-  "updatedAt": "2026-03-02T18:54:04.100Z",
-  "currentIteration": 2,
+  "updatedAt": "2026-03-02T18:58:40.467Z",
+  "currentIteration": 3,
   "maxIterations": 10,
-  "tasksCompleted": 2,
+  "tasksCompleted": 3,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -29,8 +29,8 @@
       {
         "id": "agenthive-a29.3",
         "title": "US-003: Shell injection prevention in tmux commands",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "agenthive-a29.4",
@@ -72,12 +72,22 @@
       "durationMs": 306186,
       "startedAt": "2026-03-02T18:48:56.501Z",
       "endedAt": "2026-03-02T18:54:02.687Z"
+    },
+    {
+      "iteration": 3,
+      "status": "completed",
+      "taskId": "agenthive-a29.3",
+      "taskTitle": "US-003: Shell injection prevention in tmux commands",
+      "taskCompleted": true,
+      "durationMs": 275048,
+      "startedAt": "2026-03-02T18:54:04.015Z",
+      "endedAt": "2026-03-02T18:58:39.063Z"
     }
   ],
   "skippedTaskIds": [],
   "cwd": "/home/leonardosg/repos/projects/agenthive",
   "activeTaskIds": [
-    "agenthive-a29.3"
+    "agenthive-a29.4"
   ],
   "subagentPanelVisible": false
 }

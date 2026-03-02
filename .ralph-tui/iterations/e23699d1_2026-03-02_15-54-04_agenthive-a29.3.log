@@ -1,0 +1,109 @@
+# Iteration 3 Log
+
+## Metadata
+
+- **Task ID**: agenthive-a29.3
+- **Task Title**: US-003: Shell injection prevention in tmux commands
+- **Description**: As a developer with a custom session name in config.yaml I want tmux commands to be safe from shell injection So that a session name or agent name containing shell metacharacters cannot execute arbitr...
+- **Status**: completed
+- **Task Completed**: Yes
+- **Promise Detected**: Yes
+- **Started At**: 2026-03-02T18:54:04.015Z
+- **Ended At**: 2026-03-02T18:58:39.063Z
+- **Duration**: 4m 35s
+- **Input Tokens**: 89
+- **Output Tokens**: 9132
+- **Total Tokens**: 9221
+- **Agent**: claude
+- **Model**: claude-opus-4-6
+- **Epic**: agenthive-a29
+- **Sandbox Mode**: auto
+- **Sandbox Network**: Enabled
+--- RAW OUTPUT ---
+
+
+I'll start by understanding the current state of progress and the codebase, then implement the shell injection prevention.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/kill.ts[0m
+[94m[TodoWrite][0m
+Let me check if there are any existing tests related to these files.
+[94m[Glob][0m pattern: [96mtests/**/*.ts[0m
+[94m[Bash][0m List core module files $ ls /home/leonardosg/repos/projects/agenthive/src/core/
+Now I'll create the shared tmux helper module and update both files.
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/tmux.ts[0m "import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
+
+/**
+ * Execute a tmux command safely using execFileSync (no shell interpretation).
+ */
+export function tmux(args: string[]... (748 chars)"
+[94m[TodoWrite][0m
+Now update `launch.ts`:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m edit: "import { Command } from 'commander';
+import { exec..." → "import { Command } from 'commander';
+import { exec..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m edit: "      execSync(`tmux kill-session -t ${sessionName..." → "      tmux(['kill-session', '-t', sessionName], { ..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m edit: "    if (first) {
+      execSync(
+        `tmux new..." → "    if (first) {
+      tmux(
+        ['new-session..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m edit: "  if (opts.attach) {
+    execSync(`tmux attach -t ..." → "  if (opts.attach) {
+    tmux(['attach', '-t', ses..."
+Now remove the local `tmuxSessionExists` and `commandExists` (update commandExists to keep using execFileSync which is already safe, and remove the local `tmuxSessionExists`):
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m edit: "function tmuxSessionExists(name: string): boolean ..." → "function buildLoopCommand("
+Now fix `buildLoopCommand` to shell-quote paths:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m edit: "function buildLoopCommand(
+  hiveBin: string,
+  ag..." → "function buildLoopCommand(
+  hiveBin: string,
+  ag..."
+Now check if `execSync` is still imported (it shouldn't be needed anymore):
+[94m[Grep][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m pattern: [96mexecSync[0m
+Good — `execSync` is no longer used. But `execFileSync` is still imported (used by `commandExists`). Let me verify the final state of launch.ts.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m
+launch.ts looks good. Now update kill.ts:
+[94m[TodoWrite][0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/kill.ts[0m edit: "import { Command } from 'commander';
+import { exec..." → "import { Command } from 'commander';
+import { reso..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/kill.ts[0m edit: "      execSync(`tmux kill-session -t ${sessionName..." → "      tmux(['kill-session', '-t', sessionName], { ..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/kill.ts[0m edit: "          execSync(`tmux kill-window -t ${sessionN..." → "          tmux(['kill-window', '-t', `${sessionNam..."
+Now remove the local `tmuxSessionExists` function from kill.ts:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/kill.ts[0m edit: "}
+
+function tmuxSessionExists(name: string): boole..." → "}"
+Let me verify the final state of kill.ts:
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/kill.ts[0m
+Both files look clean. Now let me also check if there are any other `execSync` calls with tmux anywhere else in the codebase:
+[94m[Grep][0m [95m/home/leonardosg/repos/projects/agenthive/src[0m pattern: [96mexecSync.*tmux[0m
+No more unsafe tmux calls. Now let's run the quality checks:
+[94m[TodoWrite][0m
+[94m[Bash][0m Run TypeScript type checking $ npm run typecheck 2>&1
+[94m[Bash][0m Run vitest tests $ npm test 2>&1
+[94m[Bash][0m Run TypeScript build $ npm run build 2>&1
+All quality checks pass: typecheck, 67 tests, and build all succeed.
+[94m[TodoWrite][0m
+Now close the bead and document learnings:
+[94m[Bash][0m Close the bead $ bd close agenthive-a29.3 --db /home/leonardosg/repos/projects/agenthive/.beads/beads.db --reason "Sh...
+Now append learnings to progress.md:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "- **Embedded shell scripts**: Hook `.sh` files are..." → "- **Embedded shell scripts**: Hook `.sh` files are..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "  - Verified embedded output is byte-identical to ..." → "  - Verified embedded output is byte-identical to ..."
+[94m[TodoWrite][0m
+All tasks complete. Here's a summary of what was implemented:
+
+**US-003: Shell injection prevention in tmux commands**
+
+**New file:** `src/core/tmux.ts` — shared helper module with:
+- `tmux(args, options)` — executes tmux via `execFileSync` (no shell interpretation)
+- `tmuxSessionExists(name)` — safely checks for session existence
+- `shellQuote(s)` — POSIX-safe single-quote escaping for shell command strings
+
+**Modified files:**
+- `src/commands/launch.ts` — replaced 5 unsafe `execSync` tmux calls with the safe helpers, shell-quoted all paths in `buildLoopCommand()`, removed duplicate `tmuxSessionExists()`
+- `src/commands/kill.ts` — replaced 3 unsafe `execSync` tmux calls with the safe helpers, removed duplicate `tmuxSessionExists()`, removed unused `execSync` import
+
+**Quality gates:** typecheck, 67 tests, and build all pass.
+
+<promise>COMPLETE</promise>
