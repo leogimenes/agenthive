@@ -9,6 +9,8 @@ after each iteration and it's included in prompts for context.
 - **TSX/JSX config**: tsconfig.json has `"jsx": "react-jsx"` for ink components. TSX files compile alongside regular TS files.
 - **Ink component pattern**: TUI components are in `src/tui/components/`, hooks in `src/tui/hooks/`. The App.tsx orchestrates all panels with a `useInput` handler for keyboard navigation.
 - **Import extensions**: All ESM imports use `.js` extensions even for `.tsx` files (NodeNext resolution requires this).
+- **Plan module pattern**: Plan storage is `.hive/plan.json` with atomic writes (tmp + rename). Core logic in `src/core/plan.ts`, types in `src/types/plan.ts`, CLI in `src/commands/plan.ts`. Commander subcommands are registered on a parent command object.
+- **Commander subcommand pattern**: Use `program.command('parent')` then chain `.command('child')` on the parent. Default action uses `.action()` on parent with options.
 
 ---
 
@@ -55,4 +57,34 @@ after each iteration and it's included in prompts for context.
 - Quality gates: typecheck clean, 67/67 tests pass
 - **Learnings:**
   - No additional work needed — bead closed immediately after verification
+---
+
+## 2026-03-02 - agenthive-hym
+- Implemented full Planning and Task Tracking system (all 11 user stories)
+- **US-001**: Plan data model — `PlanTask` and `Plan` interfaces in `src/types/plan.ts`, atomic JSON storage at `.hive/plan.json`
+- **US-002**: Board view — `hive plan` kanban-style board with status columns, `--json`, `--compact`, `--filter` flags
+- **US-003**: Task creation — `hive plan add <target> <title>` with ID generation, priority, deps, parent, labels, description
+- **US-004**: Ready queue — `computeReadyTasks()` returns tasks sorted by priority with all deps done; `hive plan ready [agent]`
+- **US-005**: Chat-driven transitions — `reconcilePlanWithChat()` auto-updates plan from DONE/BLOCKER messages; integrated into polling loop
+- **US-006**: Bulk import/export — `hive plan import <file>` (YAML + Markdown); `hive plan export <file>` (YAML)
+- **US-007**: Dependency graph — `hive plan graph` with `--focus <id>` and `--critical-path` flags
+- **US-008**: Dispatch — `hive plan dispatch` sends ready tasks to agents via chat; `--agent`, `--id`, `--all`, `--dry-run`
+- **US-009**: Task management — `hive plan update`, `hive plan remove`, `hive plan reset` with DAG validation
+- **US-010**: Hierarchical grouping — parent-child relationships, computed parent status rollup, `hive plan tree`
+- **US-011**: Analytics — `hive plan stats` with status breakdown, per-agent workload, critical path, cost estimate
+- Files created:
+  - `src/types/plan.ts` — Plan data model interfaces
+  - `src/core/plan.ts` — Core plan logic (load/save, ready queue, DAG validation, chat reconciliation, critical path)
+  - `src/commands/plan.ts` — All `hive plan` CLI subcommands
+  - `tests/core/plan.test.ts` — 45 tests covering all core plan functions
+- Files modified:
+  - `src/index.ts` — Added registerPlanCommand
+  - `src/core/polling.ts` — Integrated plan reconciliation and auto-dispatch into agent loop
+- Quality gates: typecheck clean, 112/112 tests pass (45 new), build succeeds
+- **Learnings:**
+  - Commander subcommands: register child commands on parent command object, not program directly
+  - Atomic file writes with tmp + rename prevent partial writes from concurrent agents
+  - DAG cycle detection uses standard 3-color DFS (white/gray/black)
+  - Plan reconciliation must happen before checking for manual REQUESTs in the polling loop
+  - Bracketed task IDs in chat messages `[TASK-ID]` enable reliable matching between dispatch and completion
 ---

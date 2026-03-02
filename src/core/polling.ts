@@ -2,8 +2,9 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { acquireLock, releaseLock, getCheckpoint, setCheckpoint } from './lock.js';
 import { checkDailyBudget, recordSpending } from './budget.js';
-import { findRequests, appendMessage, getChatLineCount, resolveChatPath } from './chat.js';
+import { findRequests, appendMessage, getChatLineCount, resolveChatPath, readMessagesSince } from './chat.js';
 import { syncWorktree, rebaseAndPush } from './worktree.js';
+import { loadPlan, savePlan, reconcilePlanWithChat, computeReadyTasks, promoteReadyTasks } from './plan.js';
 import type { ResolvedAgentConfig, HiveConfig } from '../types/config.js';
 
 // ── Constants ───────────────────────────────────────────────────────
@@ -104,6 +105,18 @@ export class AgentLoop {
 
     // 2. Check chat for work
     const checkpoint = getCheckpoint(this.hivePath, this.agent.name);
+
+    // 2a. Reconcile plan with new chat messages (if plan exists)
+    const newMessages = readMessagesSince(this.chatFilePath, checkpoint);
+    const plan = loadPlan(this.hivePath);
+    if (plan && newMessages.length > 0) {
+      const updates = reconcilePlanWithChat(plan, newMessages);
+      if (updates.length > 0) {
+        savePlan(this.hivePath, plan);
+        this.log(`Plan updated: ${updates.map((u) => `${u.taskId}→${u.newStatus}`).join(', ')}`);
+      }
+    }
+
     const requests = findRequests(
       this.chatFilePath,
       this.agent.chatRole,
@@ -164,7 +177,48 @@ export class AgentLoop {
       return;
     }
 
-    // 3. Nothing to do — idle
+    // 3. Check plan for ready tasks targeting this agent (auto-dispatch)
+    if (plan) {
+      promoteReadyTasks(plan);
+      const readyTasks = computeReadyTasks(plan).filter(
+        (t) => t.target.toLowerCase() === this.agent.name.toLowerCase(),
+      );
+
+      if (readyTasks.length > 0) {
+        const planTask = readyTasks[0]; // highest priority
+        const now = new Date().toISOString();
+        planTask.status = 'dispatched';
+        planTask.dispatched_at = now;
+        planTask.updated_at = now;
+        savePlan(this.hivePath, plan);
+
+        const desc = planTask.description
+          ? `. ${planTask.description.split('\n')[0]}`
+          : '';
+        const taskBody = `[${planTask.id}] ${planTask.title}${desc}`;
+        this.log(`Plan task: ${truncate(taskBody, 120)}`);
+
+        const success = await this.runTask(taskBody);
+        if (success) {
+          this.consecutiveFails = 0;
+          recordSpending(this.hivePath, this.agent.name, this.agent.budget);
+
+          const pushResult = await rebaseAndPush(this.agent.worktreePath);
+          if (!pushResult.success) {
+            this.log(`WARN: push failed after task: ${truncate(pushResult.error ?? '', 120)}`);
+          }
+
+          await sleep(5000);
+        } else {
+          this.consecutiveFails++;
+          recordSpending(this.hivePath, this.agent.name, this.agent.budget);
+          await sleep(this.agent.poll * 1000);
+        }
+        return;
+      }
+    }
+
+    // 4. Nothing to do — idle
     this.consecutiveIdle++;
     this.consecutiveFails = 0;
 

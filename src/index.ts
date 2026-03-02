@@ -12,6 +12,7 @@ import { registerDispatchCommand } from './commands/dispatch.js';
 import { registerTailCommand } from './commands/tail.js';
 import { registerConfigCommand } from './commands/config.js';
 import { registerUiCommand } from './commands/ui.js';
+import { registerPlanCommand } from './commands/plan.js';
 
 // Read version from package.json at dev/install time, fall back for
 // standalone binaries where the filesystem layout doesn't exist.
@@ -47,5 +48,6 @@ registerDispatchCommand(program);
 registerTailCommand(program);
 registerConfigCommand(program);
 registerUiCommand(program);
+registerPlanCommand(program);
 
 program.parse();

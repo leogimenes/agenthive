@@ -3,10 +3,10 @@
   "sessionId": "567b3db8-4003-4396-989f-6241be96610e",
   "status": "running",
   "startedAt": "2026-03-02T19:11:08.621Z",
-  "updatedAt": "2026-03-02T19:21:21.859Z",
-  "currentIteration": 1,
+  "updatedAt": "2026-03-02T19:32:55.081Z",
+  "currentIteration": 2,
   "maxIterations": 10,
-  "tasksCompleted": 1,
+  "tasksCompleted": 2,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -178,8 +178,8 @@
       {
         "id": "agenthive-ady.1",
         "title": "US-001: TUI framework scaffold and base layout",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "agenthive-ady.2",
@@ -295,6 +295,16 @@
       "durationMs": 566070,
       "startedAt": "2026-03-02T19:11:08.771Z",
       "endedAt": "2026-03-02T19:20:34.841Z"
+    },
+    {
+      "iteration": 2,
+      "status": "completed",
+      "taskId": "agenthive-ady.1",
+      "taskTitle": "US-001: TUI framework scaffold and base layout",
+      "taskCompleted": true,
+      "durationMs": 45663,
+      "startedAt": "2026-03-02T19:20:36.100Z",
+      "endedAt": "2026-03-02T19:21:21.763Z"
     }
   ],
   "skippedTaskIds": [],
