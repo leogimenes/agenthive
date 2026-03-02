@@ -115,3 +115,29 @@ after each iteration and it's included in prompts for context.
   - `timestamp` field is optional on `ChatMessage` to support both old and new messages in the same file
   - `timeAgo()` is useful for both CLI status and TUI — placed in shared `colors.ts` module
 ---
+
+## 2026-03-02 - agenthive-07s
+- Implemented US-002: Desktop notifications on agent events
+- New `src/core/notify.ts` module with platform-aware `notify(title, body, urgency)` function
+  - Linux: `notify-send`, macOS: `osascript`, fallback: terminal bell + stderr
+  - Non-blocking fire-and-forget via `execFile` (not `execSync`)
+- Config: `defaults.notifications` (bool) and `defaults.notify_on` (string[]) in `.hive/config.yaml`
+- Polling loop fires notifications on: DONE/BLOCKER from other agents, budget exhaustion, consecutive failure backoff
+- `hive tail -f` fires notifications for DONE/BLOCKER messages
+- `--notify` / `--no-notify` CLI flags on both `hive launch` and `hive tail`
+- Launch passes notify override to loop via `HIVE_NOTIFY` environment variable (tmux-friendly)
+- Files created:
+  - `src/core/notify.ts` — Platform-aware notification function
+- Files modified:
+  - `src/types/config.ts` — Added `notifications` and `notify_on` to `DefaultsConfig`
+  - `src/core/config.ts` — Parse new notification defaults
+  - `src/core/polling.ts` — Import notify, add `AgentLoopOptions`, fire notifications on events
+  - `src/commands/launch.ts` — `--notify`/`--no-notify` flags, env var passthrough
+  - `src/commands/tail.ts` — `--notify`/`--no-notify` flags, notify on follow mode
+  - `src/commands/init.ts` — Include new defaults in generated config
+- Quality gates: typecheck clean, 113/113 tests pass, build succeeds
+- **Learnings:**
+  - Commander's `--no-*` flags: when you add `--no-notify`, commander automatically sets `opts.notify = false` when the flag is used, and `undefined` when not
+  - Passing config overrides through tmux: use env vars (e.g. `HIVE_NOTIFY=1`) as prefix in the shell command since tmux windows run in separate processes
+  - `execFile` with a callback is non-blocking — perfect for fire-and-forget notifications that shouldn't block the poll loop
+---

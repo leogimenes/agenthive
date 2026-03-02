@@ -35,6 +35,12 @@ export interface DefaultsConfig {
 
   /** Pass --dangerously-skip-permissions to claude. Default: true. */
   skip_permissions: boolean;
+
+  /** Enable desktop notifications. Default: false. */
+  notifications: boolean;
+
+  /** Message types that trigger notifications. Default: ["DONE", "BLOCKER"]. */
+  notify_on: string[];
 }
 
 export interface AgentConfig {

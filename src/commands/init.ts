@@ -214,6 +214,8 @@ function buildConfig(
     daily_max: 20.0,
     model: 'sonnet',
     skip_permissions: true,
+    notifications: false,
+    notify_on: ['DONE', 'BLOCKER'],
   };
 
   const agents: Record<string, AgentConfig> = {};

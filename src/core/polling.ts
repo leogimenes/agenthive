@@ -5,6 +5,7 @@ import { checkDailyBudget, recordSpending } from './budget.js';
 import { findRequests, appendMessage, getChatLineCount, resolveChatPath, readMessagesSince } from './chat.js';
 import { syncWorktree, rebaseAndPush } from './worktree.js';
 import { loadPlan, savePlan, reconcilePlanWithChat, computeReadyTasks, promoteReadyTasks } from './plan.js';
+import { notify } from './notify.js';
 import type { ResolvedAgentConfig, HiveConfig } from '../types/config.js';
 
 // ── Constants ───────────────────────────────────────────────────────
@@ -16,6 +17,11 @@ const BUDGET_EXHAUST_SLEEP_MS = 60 * 60 * 1000; // 1 hour
 
 // ── AgentLoop ───────────────────────────────────────────────────────
 
+export interface AgentLoopOptions {
+  /** Override notification setting from config. */
+  notifications?: boolean;
+}
+
 export class AgentLoop {
   private agent: ResolvedAgentConfig;
   private hiveConfig: HiveConfig;
@@ -24,16 +30,24 @@ export class AgentLoop {
   private running = false;
   private consecutiveFails = 0;
   private consecutiveIdle = 0;
+  private notificationsEnabled: boolean;
+  private notifyOn: Set<string>;
 
   constructor(
     agent: ResolvedAgentConfig,
     hiveConfig: HiveConfig,
     hivePath: string,
+    options?: AgentLoopOptions,
   ) {
     this.agent = agent;
     this.hiveConfig = hiveConfig;
     this.hivePath = hivePath;
     this.chatFilePath = resolveChatPath(hivePath, hiveConfig.chat.file);
+    this.notificationsEnabled =
+      options?.notifications ?? hiveConfig.defaults.notifications;
+    this.notifyOn = new Set(
+      hiveConfig.defaults.notify_on.map((t) => t.toUpperCase()),
+    );
   }
 
   async start(): Promise<void> {
@@ -91,6 +105,11 @@ export class AgentLoop {
       this.log(
         `DAILY BUDGET EXHAUSTED: $${spent} spent of $${this.agent.daily_max} max. Sleeping 1 hour.`,
       );
+      this.sendNotify(
+        `${this.agent.name}: Budget exhausted`,
+        `$${spent} spent of $${this.agent.daily_max} daily max. Agent sleeping 1 hour.`,
+        'critical',
+      );
       await sleep(BUDGET_EXHAUST_SLEEP_MS);
       return;
     }
@@ -108,6 +127,18 @@ export class AgentLoop {
 
     // 2a. Reconcile plan with new chat messages (if plan exists)
     const newMessages = readMessagesSince(this.chatFilePath, checkpoint);
+
+    // Fire notifications for notable messages from other agents
+    for (const msg of newMessages) {
+      if (msg.role !== this.agent.chatRole && this.notifyOn.has(msg.type)) {
+        this.sendNotify(
+          `${msg.role}: ${msg.type}`,
+          truncate(msg.body, 200),
+          msg.type === 'BLOCKER' ? 'critical' : 'normal',
+        );
+      }
+    }
+
     const plan = loadPlan(this.hivePath);
     if (plan && newMessages.length > 0) {
       const updates = reconcilePlanWithChat(plan, newMessages);
@@ -165,6 +196,11 @@ export class AgentLoop {
           );
           this.log(
             `BACKOFF: ${this.consecutiveFails} consecutive failures. Sleeping ${Math.round(backoff / 1000)}s.`,
+          );
+          this.sendNotify(
+            `${this.agent.name}: Backing off`,
+            `${this.consecutiveFails} consecutive failures. Sleeping ${Math.round(backoff / 1000)}s.`,
+            'critical',
           );
           await sleep(backoff);
         } else {
@@ -300,6 +336,17 @@ After completing:
 
 If you cannot complete the task, append a BLOCKER message instead:
    \`[${this.agent.chatRole}] BLOCKER <ISO8601_TIMESTAMP>: <what went wrong and what is needed>\``;
+  }
+
+  // ── Notifications ──────────────────────────────────────────────
+
+  private sendNotify(
+    title: string,
+    body: string,
+    urgency: 'low' | 'normal' | 'critical' = 'normal',
+  ): void {
+    if (!this.notificationsEnabled) return;
+    notify(title, body, urgency);
   }
 
   // ── Logging ─────────────────────────────────────────────────────

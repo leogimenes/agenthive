@@ -39,6 +39,8 @@ const DEFAULT_DEFAULTS: DefaultsConfig = {
   daily_max: 20.0,
   model: 'sonnet',
   skip_permissions: true,
+  notifications: false,
+  notify_on: ['DONE', 'BLOCKER'],
 };
 
 // ── Path resolution ─────────────────────────────────────────────────
@@ -116,6 +118,12 @@ function validateAndNormalize(
       typeof rawDefaults.skip_permissions === 'boolean'
         ? rawDefaults.skip_permissions
         : DEFAULT_DEFAULTS.skip_permissions,
+    notifications:
+      typeof rawDefaults.notifications === 'boolean'
+        ? rawDefaults.notifications
+        : DEFAULT_DEFAULTS.notifications,
+    notify_on:
+      toStringArray(rawDefaults.notify_on) ?? DEFAULT_DEFAULTS.notify_on,
   };
 
   // Agents

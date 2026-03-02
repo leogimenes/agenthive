@@ -1,0 +1,168 @@
+# Iteration 5 Log
+
+## Metadata
+
+- **Task ID**: agenthive-07s.1
+- **Task Title**: US-001: Chat message timestamps
+- **Description**: As a developer reviewing agent activity I want every chat message to include an ISO 8601 timestamp So that `hive status` can show "2m ago", `hive tail` can show when things happened, and downstream fe...
+- **Status**: completed
+- **Task Completed**: Yes
+- **Promise Detected**: Yes
+- **Started At**: 2026-03-02T19:34:15.499Z
+- **Ended At**: 2026-03-02T19:39:34.849Z
+- **Duration**: 5m 19s
+- **Input Tokens**: 152
+- **Output Tokens**: 16455
+- **Total Tokens**: 16607
+- **Agent**: claude
+- **Model**: claude-opus-4-6
+- **Sandbox Mode**: auto
+- **Sandbox Network**: Enabled
+--- RAW OUTPUT ---
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/tasks/prd-planning.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/chat.ts[0m
+Let me understand the full scope by looking at the relevant types and how messages are used.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/types/config.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/tail.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/status.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/colors.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/chat.test.ts[0m
+Now let me check the TUI components that reference chat messages and the dispatch command.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/tui/components/ChatPanel.tsx[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/dispatch.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/tui/hooks/useChatMessages.ts[0m
+Now I have a clear picture of the codebase. Let me also check the plan's dispatch function that writes to chat, and the check-chat hook.
+[94m[Grep][0m pattern: [96mappendMessage[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/hooks/check-chat.sh[0m
+[94m[TodoWrite][0m
+[94m[TodoWrite][0m
+Let me start implementing. First, I'll add the `timestamp` field to the `ChatMessage` interface.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/types/config.ts[0m edit: "/** A parsed message from the chat file. */
+export..." → "/** A parsed message from the chat file. */
+export..."
+[94m[TodoWrite][0m
+Now update the chat module: change the message format to include timestamps, update the regex, and modify `appendMessage` and `parseMessages`.
+
+The new chat line format will be: `[ROLE] TYPE <ISO8601>: body`
+
+This preserves backward compatibility — old messages without timestamps will parse with `timestamp: undefined`.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/chat.ts[0m edit: "// ── Message format regex ───────────────────────..." → "// ── Message format regex ───────────────────────..."
+Now update `appendMessage` to include the timestamp:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/chat.ts[0m edit: "/**
+ * Append a message to the chat file.
+ * Forma..." → "/**
+ * Append a message to the chat file.
+ * Forma..."
+[94m[TodoWrite][0m
+Now update `parseMessages` to try the timestamped format first, then fall back to legacy:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/chat.ts[0m edit: "function parseMessages(content: string, lineOffset..." → "function parseMessages(content: string, lineOffset..."
+Also update the chat file header to document the new format:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/chat.ts[0m edit: "# ## Message Format
+#
+#   [ROLE] TYPE: message bod..." → "# ## Message Format
+#
+#   [ROLE] TYPE <ISO8601>: m..."
+[94m[TodoWrite][0m
+Now update the display formatting. First, add a `timeAgo` helper and update `formatMessage` in colors.ts:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/colors.ts[0m edit: "// ── Format helpers ─────────────────────────────..." → "// ── Time helpers ───────────────────────────────..."
+Now update the TUI ChatPanel to show timestamps:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/tui/components/ChatPanel.tsx[0m edit: "import { getRoleColorName, TYPE_STYLE_MAP } from '..." → "import { getRoleColorName, TYPE_STYLE_MAP, formatT..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/tui/components/ChatPanel.tsx[0m edit: "  return (
+    <Box>
+      <Text bold={isNew}>
+   ..." → "  const ts = msg.timestamp ? formatTimestamp(msg.t..."
+[94m[TodoWrite][0m
+Now update `hive status` to show "2m ago" style relative timestamps. Also add `lastActivityTime` populated from the message timestamp:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/status.ts[0m edit: "import { loadConfig, resolveHiveRoot, resolveHiveP..." → "import { loadConfig, resolveHiveRoot, resolveHiveP..."
+Now update the status table to include the time ago in the last activity column:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/status.ts[0m edit: "    return {
+      name: agent.name,
+      role: a..." → "    const lastActivityTime = lastMsg?.timestamp
+  ..."
+Now update the table rendering to show the relative time:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/status.ts[0m edit: "    // Activity
+    const activityCol = s.lastActi..." → "    // Activity
+    const agoSuffix = s.lastActivi..."
+[94m[TodoWrite][0m
+Now update the tests. The main changes needed are:
+1. Messages now include timestamps in the file format
+2. Parsed messages should have `timestamp` field
+3. Content assertions need to match the new format
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/chat.test.ts[0m edit: "    it('should append a correctly formatted messag..." → "    it('should append a correctly formatted messag..."
+
+[91m[Error: <tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>][0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/chat.test.ts[0m
+Now update the tests to account for the new timestamped format:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/chat.test.ts[0m edit: "    it('should create a chat file with protocol he..." → "    it('should create a chat file with protocol he..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/chat.test.ts[0m edit: "    it('should append a correctly formatted messag..." → "    it('should append a correctly formatted messag..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/chat.test.ts[0m edit: "    it('should uppercase the role', () => {
+      ..." → "    it('should uppercase the role', () => {
+      ..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/chat.test.ts[0m edit: "    it('should trim whitespace from body', () => {..." → "    it('should trim whitespace from body', () => {..."
+Now add a test that verifies the timestamp field is present on parsed messages, and a test for backward compatibility with legacy format:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/chat.test.ts[0m edit: "    it('should parse messages correctly', () => {
+..." → "    it('should parse messages correctly with times..."
+Wait, I used `await import` inside a non-async test. Let me fix that — the `readFileSync` and `appendFileSync` are already imported at the top, so I should use `appendFileSync` from there. But `appendFileSync` isn't imported. Let me adjust the approach.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/chat.test.ts[0m edit: "import { mkdtempSync, rmSync, readFileSync } from ..." → "import { mkdtempSync, rmSync, readFileSync, append..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/chat.test.ts[0m edit: "    it('should parse legacy messages without times..." → "    it('should parse legacy messages without times..."
+Now let me also check if there are any plan tests that reference chat message format, since reconcilePlanWithChat creates messages:
+[94m[Grep][0m [95m/home/leonardosg/repos/projects/agenthive/tests[0m pattern: [96m\[SRE\] DONE:|appendMessage|chatMessage|ChatMessage[0m
+[94m[Grep][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/plan.test.ts[0m pattern: [96m\[SRE\] DONE:|ChatMessage|chatMessage[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/plan.test.ts[0m
+Good — the plan tests construct `ChatMessage` objects manually without the `timestamp` field, and since `timestamp` is optional, they'll still compile and work fine.
+
+Now let me also check the `hive tail --raw` format in the tail command and make sure the raw output also includes timestamps:
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/tail.ts[0m
+Let me update the raw output to include the timestamp too:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/tail.ts[0m edit: "function printMessage(msg: ChatMessage, raw?: bool..." → "function printMessage(msg: ChatMessage, raw?: bool..."
+Now let me also update the dispatch command's "recent messages" display to show timestamps:
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/dispatch.ts[0m
+The dispatch command's confirmation output and "recent messages" display don't need the full timestamp in the confirm line (it would be cluttered), but the recent messages could show it. The message is already written with a timestamp in the file. The confirm line is just informational — let's keep it simple.
+
+Now let me also check the polling loop's buildPrompt to make sure the instructions for agents to write chat messages are updated:
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m
+The buildPrompt tells agents to write the old format directly. Since `appendMessage` is what actually writes to the file (and it now includes timestamps), and the agents are instructed to append lines manually, I should update the prompt to show the new format. However, the agents are external (Claude Code instances) and they may or may not follow this exactly. The important thing is that `appendMessage` (used by the system) always includes timestamps. Agent-written messages will be parsed by the legacy regex if they don't include timestamps.
+
+Let me update the prompt to use the new format so agents also write timestamps:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m edit: "3. Append a DONE message to the chat file at \`${t..." → "3. Append a DONE message to the chat file at \`${t..."
+Now let me run the quality gates:
+[94m[TodoWrite][0m
+[94m[Bash][0m Run TypeScript type checking $ npm run typecheck 2>&1
+[94m[Bash][0m Run vitest tests $ npm test 2>&1
+Typecheck passes, all 113 tests pass (including the new tests). Let me also run the build:
+[94m[Bash][0m Build TypeScript to dist/ $ npm run build 2>&1
+All quality gates pass. Now let me close the bead and document learnings.
+[94m[TodoWrite][0m
+[94m[Bash][0m Close the bead $ bd close agenthive-07s.1 --db /home/leonardosg/repos/projects/agenthive/.beads/beads.db --reason "Ad...
+Now document the learnings in progress.md:
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "- **Learnings:**
+  - No additional work needed — b..." → "- **Learnings:**
+  - No additional work needed — b..."
+
+[91m[Error: <tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.
+String: - **Learnings:**
+  - No additional work needed — bead closed immediately after verification
+---</tool_use_error>][0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "- Quality gates: typecheck clean, 112/112 tests pa..." → "- Quality gates: typecheck clean, 112/112 tests pa..."
+[94m[TodoWrite][0m
+All tasks complete. Here's a summary of what was implemented:
+
+**US-001: Chat message timestamps** — Every chat message now includes an ISO 8601 timestamp.
+
+### Changes
+
+1. **Wire format**: `[ROLE] TYPE <2026-03-02T16:38:00.000Z>: body` — backward-compatible with the old `[ROLE] TYPE: body` format
+2. **`ChatMessage.timestamp`** (optional `string`) — parsed from the new format, `undefined` for legacy messages
+3. **`appendMessage()`** — now automatically includes `new Date().toISOString()` in every written message
+4. **`parseMessages()`** — tries the timestamped regex first, falls back to legacy
+5. **`hive tail`** — colored output shows `HH:MM:SS`, raw mode shows `<ISO8601>`
+6. **`hive status`** — LAST ACTIVITY column shows `(2m ago)` relative time via `timeAgo()`
+7. **TUI ChatPanel** — displays `HH:MM:SS` inline with each message
+8. **Agent prompt** — updated to instruct spawned agents to include timestamps
+
+Quality gates: typecheck clean, 113/113 tests pass, build succeeds.
+
+<promise>COMPLETE</promise>

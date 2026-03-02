@@ -10,6 +10,7 @@ import {
   getChatLineCount,
 } from '../core/chat.js';
 import { formatMessage } from '../core/colors.js';
+import { notify } from '../core/notify.js';
 import type { ChatMessage } from '../types/config.js';
 
 // ── Command registration ─────────────────────────────────────────────
@@ -22,6 +23,8 @@ export function registerTailCommand(program: Command): void {
     .option('-f, --follow', 'Live follow mode (watch for new messages)')
     .option('--type <types>', 'Filter by message type (comma-separated)')
     .option('--raw', 'Show raw lines without color formatting')
+    .option('--notify', 'Enable desktop notifications for DONE/BLOCKER messages')
+    .option('--no-notify', 'Disable desktop notifications')
     .action(async (agent: string | undefined, opts) => {
       const cwd = program.opts().cwd
         ? resolve(program.opts().cwd)
@@ -36,7 +39,7 @@ export function registerTailCommand(program: Command): void {
 async function runTail(
   cwd: string,
   agentFilter: string | undefined,
-  opts: { last: string; follow?: boolean; type?: string; raw?: boolean },
+  opts: { last: string; follow?: boolean; type?: string; raw?: boolean; notify?: boolean },
 ): Promise<void> {
   let config;
   let hivePath: string;
@@ -115,6 +118,12 @@ async function runTail(
   console.log('');
   console.log(chalk.gray('── following (Ctrl+C to stop) ──'));
 
+  // Resolve notification settings
+  const notificationsEnabled = opts.notify ?? config.defaults.notifications;
+  const notifyOn = new Set(
+    config.defaults.notify_on.map((t) => t.toUpperCase()),
+  );
+
   let lastLine = getChatLineCount(chatFilePath);
 
   watchFile(chatFilePath, { interval: 1000 }, () => {
@@ -123,6 +132,19 @@ async function runTail(
 
     let newMessages = readMessagesSince(chatFilePath, lastLine);
     lastLine = currentLine;
+
+    // Fire notifications before filtering (so we catch all notable messages)
+    if (notificationsEnabled) {
+      for (const msg of newMessages) {
+        if (notifyOn.has(msg.type)) {
+          notify(
+            `${msg.role}: ${msg.type}`,
+            msg.body.length > 200 ? msg.body.slice(0, 197) + '...' : msg.body,
+            msg.type === 'BLOCKER' ? 'critical' : 'normal',
+          );
+        }
+      }
+    }
 
     newMessages = applyFilters(newMessages, filterRoles, filterTypes);
 

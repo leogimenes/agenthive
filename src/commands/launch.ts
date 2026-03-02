@@ -14,6 +14,8 @@ export function registerLaunchCommand(program: Command): void {
     .option('--dry-run', 'Show what would be launched without starting')
     .option('--attach', 'Attach to tmux session after launching')
     .option('--force', 'Kill existing session before launching')
+    .option('--notify', 'Enable desktop notifications for agent events')
+    .option('--no-notify', 'Disable desktop notifications')
     .action(async (agents: string[], opts) => {
       const cwd = program.opts().cwd
         ? resolve(program.opts().cwd)
@@ -43,7 +45,7 @@ export function registerLoopCommand(program: Command): void {
 async function runLaunch(
   cwd: string,
   agentFilter: string[],
-  opts: { dryRun?: boolean; attach?: boolean; force?: boolean },
+  opts: { dryRun?: boolean; attach?: boolean; force?: boolean; notify?: boolean },
 ): Promise<void> {
   // Verify tmux is available
   if (!commandExists('tmux')) {
@@ -151,7 +153,8 @@ async function runLaunch(
 
     // Build the loop command
     // Use tsx in dev or node in production
-    const loopCmd = buildLoopCommand(hiveBin, agent.name, hiveRoot);
+    const notifyOverride = opts.notify !== undefined ? opts.notify : undefined;
+    const loopCmd = buildLoopCommand(hiveBin, agent.name, hiveRoot, notifyOverride);
 
     if (first) {
       tmux(
@@ -217,7 +220,13 @@ async function runLoop(cwd: string, agentName: string): Promise<void> {
     process.exit(1);
   }
 
-  const loop = new AgentLoop(agent, config, hivePath);
+  // Read notification override from environment (set by `hive launch --notify`)
+  const notifyEnv = process.env.HIVE_NOTIFY;
+  const notifyOverride = notifyEnv === '1' ? true : notifyEnv === '0' ? false : undefined;
+
+  const loop = new AgentLoop(agent, config, hivePath, {
+    notifications: notifyOverride,
+  });
   await loop.start();
 }
 
@@ -236,16 +245,22 @@ function buildLoopCommand(
   hiveBin: string,
   agentName: string,
   hiveRoot: string,
+  notifyOverride?: boolean,
 ): string {
   // Detect if running via tsx (development) or compiled
   const isTsx = hiveBin.endsWith('.ts') || process.argv[0].includes('tsx');
   const q = shellQuote;
 
+  // Pass notification override via environment variable
+  const envPrefix = notifyOverride !== undefined
+    ? `HIVE_NOTIFY=${notifyOverride ? '1' : '0'} `
+    : '';
+
   if (isTsx) {
     // Dev mode: use tsx to run the TS source
-    return `npx tsx ${q(hiveBin)} --cwd ${q(hiveRoot)} _loop ${q(agentName)}`;
+    return `${envPrefix}npx tsx ${q(hiveBin)} --cwd ${q(hiveRoot)} _loop ${q(agentName)}`;
   }
 
   // Production: run the compiled JS directly
-  return `node ${q(hiveBin)} --cwd ${q(hiveRoot)} _loop ${q(agentName)}`;
+  return `${envPrefix}node ${q(hiveBin)} --cwd ${q(hiveRoot)} _loop ${q(agentName)}`;
 }
