@@ -14,3 +14,7 @@ coverage/
 
 .beads/
 .ralph-tui/
+
+docs/
+tasks/
+test-install/

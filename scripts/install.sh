@@ -5,8 +5,8 @@
 # Releases. Detects OS and architecture automatically.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/agenthive/agenthive/main/scripts/install.sh | sh
-#   wget -qO- https://raw.githubusercontent.com/agenthive/agenthive/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/leogimenes/agenthive/main/scripts/install.sh | sh
+#   wget -qO- https://raw.githubusercontent.com/leogimenes/agenthive/main/scripts/install.sh | sh
 #
 # Options:
 #   --global            Install to /usr/local/bin instead of ~/.local/bin
@@ -19,7 +19,7 @@
 
 set -eu
 
-REPO="agenthive/agenthive"
+REPO="leogimenes/agenthive"
 BINARY_NAME="hive"
 LOCAL_DIR="$HOME/.local/bin"
 GLOBAL_DIR="/usr/local/bin"
