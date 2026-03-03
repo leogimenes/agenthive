@@ -11,3 +11,6 @@ coverage/
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+
+.beads/
+.ralph-tui/
