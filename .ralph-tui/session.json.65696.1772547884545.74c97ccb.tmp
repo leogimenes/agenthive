@@ -3,10 +3,10 @@
   "sessionId": "603f043a-3618-44a3-ae8f-6b8ed6a30d94",
   "status": "running",
   "startedAt": "2026-03-03T13:55:54.410Z",
-  "updatedAt": "2026-03-03T14:20:48.653Z",
-  "currentIteration": 6,
+  "updatedAt": "2026-03-03T14:24:44.544Z",
+  "currentIteration": 7,
   "maxIterations": 2,
-  "tasksCompleted": 6,
+  "tasksCompleted": 7,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -47,8 +47,8 @@
       {
         "id": "agenthive-2h2.6",
         "title": "US-006: Cost reporting",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "agenthive-2h2.7",
@@ -136,6 +136,16 @@
       "durationMs": 394720,
       "startedAt": "2026-03-03T14:09:40.469Z",
       "endedAt": "2026-03-03T14:16:15.189Z"
+    },
+    {
+      "iteration": 7,
+      "status": "completed",
+      "taskId": "agenthive-2h2.6",
+      "taskTitle": "US-006: Cost reporting",
+      "taskCompleted": true,
+      "durationMs": 271881,
+      "startedAt": "2026-03-03T14:16:16.564Z",
+      "endedAt": "2026-03-03T14:20:48.445Z"
     }
   ],
   "skippedTaskIds": [],

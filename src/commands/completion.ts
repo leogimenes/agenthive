@@ -4,7 +4,7 @@ import { Command } from 'commander';
 const COMMANDS = [
   'init', 'launch', 'kill', 'status', 'dispatch', 'tail',
   'config', 'ui', 'plan', 'templates', 'merge', 'completion',
-  'add', 'remove', 'logs', 'cost',
+  'add', 'remove', 'logs', 'cost', 'resume',
 ];
 
 // ── Commands that accept agent names as arguments ───────────────────
@@ -154,6 +154,9 @@ _hive_completions() {
     cost)
       COMPREPLY=( $(compgen -W "--agent --since --json --help" -- "$cur") )
       ;;
+    resume)
+      COMPREPLY=( $(compgen -W "--yes --force --dry-run --help" -- "$cur") )
+      ;;
   esac
 }
 
@@ -187,6 +190,7 @@ _hive() {
     'remove:Remove an agent from the hive'
     'logs:Show Claude Code transcript events'
     'cost:Show per-agent and aggregate cost summary'
+    'resume:Detect orphaned state and relaunch dead agents'
   )
 
   global_flags=(
@@ -337,6 +341,12 @@ _hive() {
         '--since[Filter by date (YYYY-MM-DD)]:date:' \\
         '--json[Output as JSON]'
       ;;
+    resume)
+      _arguments \\
+        '--yes[Skip confirmation prompt]' \\
+        '--force[Restart even running agents]' \\
+        '--dry-run[Show recovery plan without executing]'
+      ;;
   esac
 }
 
@@ -357,7 +367,7 @@ function fishCompletion(): string {
     '# Detect if a subcommand has been given',
     'function __hive_no_subcommand',
     '  set -l cmd (commandline -opc)',
-    '  for c in init launch kill status dispatch tail config ui plan templates merge completion add remove logs cost',
+    '  for c in init launch kill status dispatch tail config ui plan templates merge completion add remove logs cost resume',
     '    if contains -- $c $cmd',
     '      return 1',
     '    end',
@@ -396,6 +406,7 @@ function fishCompletion(): string {
     remove: 'Remove an agent from the hive',
     logs: 'Show Claude Code transcript events',
     cost: 'Show per-agent and aggregate cost summary',
+    resume: 'Detect orphaned state and relaunch dead agents',
   };
 
   for (const [cmd, desc] of Object.entries(commandDescs)) {
@@ -498,6 +509,12 @@ function fishCompletion(): string {
   lines.push('complete -c hive -n "__hive_using_subcommand cost" -l agent -d "Show breakdown for one agent"');
   lines.push('complete -c hive -n "__hive_using_subcommand cost" -l since -d "Filter by date (YYYY-MM-DD)"');
   lines.push('complete -c hive -n "__hive_using_subcommand cost" -l json -d "Output as JSON"');
+
+  lines.push('');
+  lines.push('# resume options');
+  lines.push('complete -c hive -n "__hive_using_subcommand resume" -l yes -d "Skip confirmation prompt"');
+  lines.push('complete -c hive -n "__hive_using_subcommand resume" -l force -d "Restart even running agents"');
+  lines.push('complete -c hive -n "__hive_using_subcommand resume" -l dry-run -d "Show recovery plan without executing"');
 
   lines.push('');
 

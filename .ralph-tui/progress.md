@@ -128,3 +128,22 @@ after each iteration and it's included in prompts for context.
   - TSV format with tab-separated fields works well for structured log lines; task descriptions need tab/newline sanitization
   - The existing `recordSpending` tracks daily totals (resets daily), while the new cost log is permanent and append-only — they serve complementary purposes
 ---
+
+## 2026-03-03 - agenthive-2h2.7
+- Implemented `hive resume` command for session recovery after crash/disconnect
+- Files changed: `src/commands/resume.ts` (new), `src/index.ts` (registration), `src/commands/completion.ts` (resume completions)
+- Features:
+  - Detects agent state: running (PID alive + lock), stale (lock exists but PID dead), stopped (no state)
+  - Lists tmux windows to detect orphaned windows alongside stale locks
+  - Builds and displays a color-coded recovery plan showing each agent's state and planned action
+  - `--yes` skips confirmation prompt for scripted/automated use
+  - `--force` restarts even running agents (kills process, cleans lock, relaunches)
+  - `--dry-run` shows recovery plan without executing
+  - Reuses existing tmux session if present — adds windows rather than creating a new session
+  - Cleans stale locks and orphaned tmux windows before relaunching
+  - Shell completions added for bash, zsh, and fish
+- **Learnings:**
+  - `tmux list-windows -t <session> -F '#{window_name}'` is the clean way to list window names in a session — use `execFileSync` with pipe output to parse
+  - The `readline` module's `createInterface` + `rl.question()` works well for simple y/N confirmation prompts in CLI commands
+  - The `buildLoopCommand` helper from `launch.ts` was duplicated rather than shared — both detect tsx vs production mode and build the appropriate command string
+---
