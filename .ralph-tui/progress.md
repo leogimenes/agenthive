@@ -37,3 +37,19 @@ after each iteration and it's included in prompts for context.
   - `getMainBranch()` in `src/core/worktree.ts` checks origin/main, origin/master, then local main/master
   - Merge state is persisted in `.hive/state/merge-state.json` for `--continue` flow
 ---
+
+## 2026-03-03 - agenthive-2h2.3
+- Implemented `hive completion <shell>` command for bash, zsh, and fish shell completions
+- Files changed: `src/commands/completion.ts` (new), `src/index.ts` (registration)
+- Features:
+  - Static completions for all command names and global flags (`--cwd`, `--version`, `--help`)
+  - Dynamic agent name completions for `launch`, `kill`, `dispatch`, `tail`, and `merge` via `hive config --agents --json`
+  - Per-command flag/option completions
+  - Subcommand completions for `plan` and `templates`
+  - Installation instructions printed via `hive completion --help`
+  - Error handling for unknown shell names
+- **Learnings:**
+  - Dynamic completions resolve agent names at tab-completion time by invoking `hive config --agents --json` and parsing the output — this works even without importing config modules
+  - The `addHelpText('after', ...)` commander method is useful for appending installation instructions to `--help` output
+  - Completion scripts are pure string generation — no external dependencies needed
+---

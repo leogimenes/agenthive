@@ -3,7 +3,7 @@
   "sessionId": "603f043a-3618-44a3-ae8f-6b8ed6a30d94",
   "status": "running",
   "startedAt": "2026-03-03T13:55:54.410Z",
-  "updatedAt": "2026-03-03T14:00:16.321Z",
+  "updatedAt": "2026-03-03T14:03:22.630Z",
   "currentIteration": 2,
   "maxIterations": 2,
   "tasksCompleted": 2,
@@ -100,8 +100,6 @@
   ],
   "skippedTaskIds": [],
   "cwd": "/home/leonardosg/repos/projects/agenthive",
-  "activeTaskIds": [
-    "agenthive-2h2.3"
-  ],
+  "activeTaskIds": [],
   "subagentPanelVisible": false
 }
