@@ -7,6 +7,9 @@ import {
   recordSpending,
   getDailySpend,
   resetDailySpend,
+  logTaskCost,
+  readCostLog,
+  readCostLogSince,
 } from '../../src/core/budget.js';
 
 describe('budget', () => {
@@ -105,6 +108,75 @@ describe('budget', () => {
       resetDailySpend(hivePath, 'sre');
       expect(getDailySpend(hivePath, 'sre').spent).toBe(0);
       expect(getDailySpend(hivePath, 'frontend').spent).toBe(5);
+    });
+  });
+
+  // ── logTaskCost ────────────────────────────────────────────────────
+
+  describe('logTaskCost', () => {
+    it('should create a cost log entry', () => {
+      logTaskCost(hivePath, 'sre', 'implement pagination', 2.0, true);
+      const entries = readCostLog(hivePath, 'sre');
+      expect(entries).toHaveLength(1);
+      expect(entries[0].task).toBe('implement pagination');
+      expect(entries[0].amount).toBe(2.0);
+      expect(entries[0].success).toBe(true);
+      expect(entries[0].timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    });
+
+    it('should append multiple entries', () => {
+      logTaskCost(hivePath, 'sre', 'task 1', 2.0, true);
+      logTaskCost(hivePath, 'sre', 'task 2', 1.5, false);
+      logTaskCost(hivePath, 'sre', 'task 3', 2.0, true);
+      const entries = readCostLog(hivePath, 'sre');
+      expect(entries).toHaveLength(3);
+      expect(entries[0].task).toBe('task 1');
+      expect(entries[1].task).toBe('task 2');
+      expect(entries[1].success).toBe(false);
+      expect(entries[2].task).toBe('task 3');
+    });
+
+    it('should sanitize tabs and newlines in task descriptions', () => {
+      logTaskCost(hivePath, 'sre', 'task\twith\ttabs\nand\nnewlines', 2.0, true);
+      const entries = readCostLog(hivePath, 'sre');
+      expect(entries).toHaveLength(1);
+      expect(entries[0].task).not.toContain('\t');
+      expect(entries[0].task).not.toContain('\n');
+    });
+
+    it('should track agents independently', () => {
+      logTaskCost(hivePath, 'sre', 'sre task', 2.0, true);
+      logTaskCost(hivePath, 'frontend', 'frontend task', 1.5, true);
+      expect(readCostLog(hivePath, 'sre')).toHaveLength(1);
+      expect(readCostLog(hivePath, 'frontend')).toHaveLength(1);
+    });
+  });
+
+  // ── readCostLog ────────────────────────────────────────────────────
+
+  describe('readCostLog', () => {
+    it('should return empty array when no log exists', () => {
+      const entries = readCostLog(hivePath, 'sre');
+      expect(entries).toEqual([]);
+    });
+  });
+
+  // ── readCostLogSince ──────────────────────────────────────────────
+
+  describe('readCostLogSince', () => {
+    it('should filter entries by date', () => {
+      logTaskCost(hivePath, 'sre', 'today task', 2.0, true);
+      const today = new Date().toISOString().slice(0, 10);
+      const entries = readCostLogSince(hivePath, 'sre', today);
+      expect(entries).toHaveLength(1);
+    });
+
+    it('should exclude entries before since date', () => {
+      logTaskCost(hivePath, 'sre', 'task', 2.0, true);
+      // Use a future date to ensure it filters out
+      const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      const entries = readCostLogSince(hivePath, 'sre', tomorrow);
+      expect(entries).toHaveLength(0);
     });
   });
 });

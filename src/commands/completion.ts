@@ -4,7 +4,7 @@ import { Command } from 'commander';
 const COMMANDS = [
   'init', 'launch', 'kill', 'status', 'dispatch', 'tail',
   'config', 'ui', 'plan', 'templates', 'merge', 'completion',
-  'add', 'remove', 'logs',
+  'add', 'remove', 'logs', 'cost',
 ];
 
 // ── Commands that accept agent names as arguments ───────────────────
@@ -151,6 +151,9 @@ _hive_completions() {
       agents=$(_hive_agents)
       COMPREPLY=( $(compgen -W "$agents -n --last -l --list -s --session -f --follow --json --help" -- "$cur") )
       ;;
+    cost)
+      COMPREPLY=( $(compgen -W "--agent --since --json --help" -- "$cur") )
+      ;;
   esac
 }
 
@@ -183,6 +186,7 @@ _hive() {
     'add:Add a new agent to the hive'
     'remove:Remove an agent from the hive'
     'logs:Show Claude Code transcript events'
+    'cost:Show per-agent and aggregate cost summary'
   )
 
   global_flags=(
@@ -325,6 +329,14 @@ _hive() {
         '--delete-branch[Delete the git branch]' \\
         '1:agent:compadd -a agents'
       ;;
+    cost)
+      local -a agents
+      agents=(\${(f)"$(_hive_agents)"})
+      _arguments \\
+        '--agent[Show breakdown for one agent]:agent:compadd -a agents' \\
+        '--since[Filter by date (YYYY-MM-DD)]:date:' \\
+        '--json[Output as JSON]'
+      ;;
   esac
 }
 
@@ -345,7 +357,7 @@ function fishCompletion(): string {
     '# Detect if a subcommand has been given',
     'function __hive_no_subcommand',
     '  set -l cmd (commandline -opc)',
-    '  for c in init launch kill status dispatch tail config ui plan templates merge completion add remove logs',
+    '  for c in init launch kill status dispatch tail config ui plan templates merge completion add remove logs cost',
     '    if contains -- $c $cmd',
     '      return 1',
     '    end',
@@ -383,6 +395,7 @@ function fishCompletion(): string {
     add: 'Add a new agent to the hive',
     remove: 'Remove an agent from the hive',
     logs: 'Show Claude Code transcript events',
+    cost: 'Show per-agent and aggregate cost summary',
   };
 
   for (const [cmd, desc] of Object.entries(commandDescs)) {
@@ -479,6 +492,12 @@ function fishCompletion(): string {
   lines.push('complete -c hive -n "__hive_using_subcommand logs" -s s -l session -d "Show specific session"');
   lines.push('complete -c hive -n "__hive_using_subcommand logs" -s f -l follow -d "Live-tail transcripts"');
   lines.push('complete -c hive -n "__hive_using_subcommand logs" -l json -d "Output as JSON"');
+
+  lines.push('');
+  lines.push('# cost options');
+  lines.push('complete -c hive -n "__hive_using_subcommand cost" -l agent -d "Show breakdown for one agent"');
+  lines.push('complete -c hive -n "__hive_using_subcommand cost" -l since -d "Filter by date (YYYY-MM-DD)"');
+  lines.push('complete -c hive -n "__hive_using_subcommand cost" -l json -d "Output as JSON"');
 
   lines.push('');
 

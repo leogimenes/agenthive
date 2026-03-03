@@ -3,10 +3,10 @@
   "sessionId": "603f043a-3618-44a3-ae8f-6b8ed6a30d94",
   "status": "running",
   "startedAt": "2026-03-03T13:55:54.410Z",
-  "updatedAt": "2026-03-03T14:09:40.554Z",
-  "currentIteration": 5,
+  "updatedAt": "2026-03-03T14:16:16.647Z",
+  "currentIteration": 6,
   "maxIterations": 2,
-  "tasksCompleted": 5,
+  "tasksCompleted": 6,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -41,8 +41,8 @@
       {
         "id": "agenthive-2h2.5",
         "title": "US-005: Claude Code transcript viewer",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "agenthive-2h2.6",
@@ -126,12 +126,22 @@
       "durationMs": 143651,
       "startedAt": "2026-03-03T14:07:15.445Z",
       "endedAt": "2026-03-03T14:09:39.096Z"
+    },
+    {
+      "iteration": 6,
+      "status": "completed",
+      "taskId": "agenthive-2h2.5",
+      "taskTitle": "US-005: Claude Code transcript viewer",
+      "taskCompleted": true,
+      "durationMs": 394720,
+      "startedAt": "2026-03-03T14:09:40.469Z",
+      "endedAt": "2026-03-03T14:16:15.189Z"
     }
   ],
   "skippedTaskIds": [],
   "cwd": "/home/leonardosg/repos/projects/agenthive",
   "activeTaskIds": [
-    "agenthive-2h2.5"
+    "agenthive-2h2.6"
   ],
   "subagentPanelVisible": false
 }

@@ -110,3 +110,21 @@ after each iteration and it's included in prompts for context.
   - Tool use blocks have `{type: "tool_use", name: "ToolName", input: {...}}` — tool results come back in `user` entries as `{type: "tool_result"}`
   - The `chokidar` package (already a dependency) works well for live-tailing JSONL files by tracking event count offsets
 ---
+
+## 2026-03-03 - agenthive-2h2.6
+- Implemented `hive cost` command for per-agent and aggregate cost reporting
+- Files changed: `src/core/budget.ts` (cost log functions), `src/core/polling.ts` (logTaskCost integration), `src/commands/cost.ts` (new), `src/index.ts` (registration), `src/commands/completion.ts` (cost completions), `tests/core/budget.test.ts` (7 new tests)
+- Features:
+  - Cost log: append-only TSV file per agent at `.hive/state/<agent>.cost-log` with timestamp, task summary, amount, success
+  - `logTaskCost()` called from `polling.ts` after each task completion (both success and failure)
+  - `hive cost` summary table: per-agent today and this-week spend with task counts
+  - `hive cost --agent <name>` task-by-task breakdown for one agent
+  - `hive cost --since <date>` filters by date range
+  - `hive cost --json` outputs machine-readable data
+  - Output includes note: "Costs are estimated based on per-task budget caps"
+  - Shell completions added for bash, zsh, and fish
+- **Learnings:**
+  - `appendFileSync` is ideal for append-only log files — no need to read-modify-write
+  - TSV format with tab-separated fields works well for structured log lines; task descriptions need tab/newline sanitization
+  - The existing `recordSpending` tracks daily totals (resets daily), while the new cost log is permanent and append-only — they serve complementary purposes
+---

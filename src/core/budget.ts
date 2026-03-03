@@ -1,6 +1,7 @@
 import {
   readFileSync,
   writeFileSync,
+  appendFileSync,
   existsSync,
   statSync,
   mkdirSync,
@@ -70,6 +71,82 @@ export function resetDailySpend(
   const spendFile = getSpendFilePath(hivePath, agentName);
   ensureStateDir(hivePath);
   writeFileSync(spendFile, '0', 'utf-8');
+}
+
+// ── Cost log ────────────────────────────────────────────────────────
+
+export interface CostLogEntry {
+  timestamp: string;
+  task: string;
+  amount: number;
+  success: boolean;
+}
+
+/**
+ * Append a task cost entry to the agent's cost log.
+ * Format: append-only TSV with timestamp, task summary, amount, success.
+ */
+export function logTaskCost(
+  hivePath: string,
+  agentName: string,
+  task: string,
+  amount: number,
+  success: boolean,
+): void {
+  const logFile = getCostLogPath(hivePath, agentName);
+  ensureStateDir(hivePath);
+  // TSV line: timestamp\ttask\tamount\tsuccess
+  const ts = new Date().toISOString();
+  const sanitizedTask = task.replace(/[\t\n\r]/g, ' ').slice(0, 200);
+  const line = `${ts}\t${sanitizedTask}\t${amount}\t${success}\n`;
+  appendFileSync(logFile, line, 'utf-8');
+}
+
+/**
+ * Read all cost log entries for an agent.
+ */
+export function readCostLog(
+  hivePath: string,
+  agentName: string,
+): CostLogEntry[] {
+  const logFile = getCostLogPath(hivePath, agentName);
+  if (!existsSync(logFile)) return [];
+
+  const content = readFileSync(logFile, 'utf-8').trim();
+  if (!content) return [];
+
+  return content.split('\n').map(parseCostLogLine).filter(Boolean) as CostLogEntry[];
+}
+
+/**
+ * Read cost log entries filtered by date (YYYY-MM-DD).
+ */
+export function readCostLogSince(
+  hivePath: string,
+  agentName: string,
+  sinceDate: string,
+): CostLogEntry[] {
+  return readCostLog(hivePath, agentName).filter(
+    (e) => e.timestamp.slice(0, 10) >= sinceDate,
+  );
+}
+
+function getCostLogPath(hivePath: string, agentName: string): string {
+  return join(hivePath, 'state', `${agentName}.cost-log`);
+}
+
+function parseCostLogLine(line: string): CostLogEntry | null {
+  const parts = line.split('\t');
+  if (parts.length < 4) return null;
+  const [timestamp, task, amountStr, successStr] = parts;
+  const amount = parseFloat(amountStr);
+  if (isNaN(amount)) return null;
+  return {
+    timestamp,
+    task,
+    amount,
+    success: successStr === 'true',
+  };
 }
 
 // ── Internal ────────────────────────────────────────────────────────

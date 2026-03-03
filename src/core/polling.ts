@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { acquireLock, releaseLock, getCheckpoint, setCheckpoint } from './lock.js';
-import { checkDailyBudget, recordSpending } from './budget.js';
+import { checkDailyBudget, recordSpending, logTaskCost } from './budget.js';
 import { findRequests, appendMessage, getChatLineCount, resolveChatPath, readMessagesSince } from './chat.js';
 import { syncWorktree, rebaseAndPush } from './worktree.js';
 import { loadPlan, savePlan, reconcilePlanWithChat, computeReadyTasks, promoteReadyTasks } from './plan.js';
@@ -168,6 +168,7 @@ export class AgentLoop {
       if (success) {
         this.consecutiveFails = 0;
         recordSpending(this.hivePath, this.agent.name, this.agent.budget);
+        logTaskCost(this.hivePath, this.agent.name, task.body, this.agent.budget, true);
 
         // Rebase and push after successful task
         const pushResult = await rebaseAndPush(this.agent.worktreePath);
@@ -187,6 +188,7 @@ export class AgentLoop {
       } else {
         this.consecutiveFails++;
         recordSpending(this.hivePath, this.agent.name, this.agent.budget);
+        logTaskCost(this.hivePath, this.agent.name, task.body, this.agent.budget, false);
 
         if (this.consecutiveFails >= MAX_CONSECUTIVE_FAILS) {
           const power = this.consecutiveFails - MAX_CONSECUTIVE_FAILS;
@@ -238,6 +240,7 @@ export class AgentLoop {
         if (success) {
           this.consecutiveFails = 0;
           recordSpending(this.hivePath, this.agent.name, this.agent.budget);
+          logTaskCost(this.hivePath, this.agent.name, taskBody, this.agent.budget, true);
 
           const pushResult = await rebaseAndPush(this.agent.worktreePath);
           if (!pushResult.success) {
@@ -248,6 +251,7 @@ export class AgentLoop {
         } else {
           this.consecutiveFails++;
           recordSpending(this.hivePath, this.agent.name, this.agent.budget);
+          logTaskCost(this.hivePath, this.agent.name, taskBody, this.agent.budget, false);
           await sleep(this.agent.poll * 1000);
         }
         return;
