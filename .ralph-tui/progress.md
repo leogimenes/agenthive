@@ -70,3 +70,22 @@ after each iteration and it's included in prompts for context.
   - The `registerHooksInWorktree` helper from `init.ts` was duplicated since it's not exported and is tightly coupled to the init flow — could be extracted to a shared module in the future
   - Commander's `parseFloat` can be passed directly as the option parser for numeric flags
 ---
+
+## 2026-03-03 - agenthive-2h2.4
+- Created `scripts/install.sh` — POSIX-compatible installation script for standalone binary
+- Files changed: `scripts/install.sh` (new)
+- Features:
+  - Detects OS (Linux, macOS) and architecture (x64, arm64)
+  - Downloads pre-built binary from GitHub Releases (`agenthive/agenthive`)
+  - SHA256 checksum verification (supports `sha256sum` and `shasum`)
+  - Installs to `~/.local/bin/hive` by default, `/usr/local/bin/hive` with `--global`
+  - `--version <tag>` for specific release, `--uninstall` to remove
+  - Falls back to `wget` if `curl` not available
+  - Existing installation prompts for overwrite confirmation
+  - PATH detection with shell-specific instructions
+  - Shell completion setup instructions at end of install flow
+- **Learnings:**
+  - POSIX sh doesn't support arrays or `[[ ]]` — use `case` for string matching and `[ ]` for tests
+  - GitHub API releases/latest endpoint returns JSON; parsing tag_name with grep+sed avoids jq dependency
+  - `mktemp -d` is widely available on both Linux and macOS for temp directory creation
+---

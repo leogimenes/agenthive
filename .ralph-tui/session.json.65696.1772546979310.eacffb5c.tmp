@@ -3,10 +3,10 @@
   "sessionId": "603f043a-3618-44a3-ae8f-6b8ed6a30d94",
   "status": "running",
   "startedAt": "2026-03-03T13:55:54.410Z",
-  "updatedAt": "2026-03-03T14:07:14.279Z",
-  "currentIteration": 3,
+  "updatedAt": "2026-03-03T14:09:39.309Z",
+  "currentIteration": 4,
   "maxIterations": 2,
-  "tasksCompleted": 3,
+  "tasksCompleted": 4,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -71,8 +71,8 @@
       {
         "id": "agenthive-2h2.10",
         "title": "US-010: Post-init agent management",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       }
     ]
   },
@@ -106,6 +106,16 @@
       "durationMs": 186182,
       "startedAt": "2026-03-03T14:00:16.238Z",
       "endedAt": "2026-03-03T14:03:22.420Z"
+    },
+    {
+      "iteration": 4,
+      "status": "completed",
+      "taskId": "agenthive-2h2.10",
+      "taskTitle": "US-010: Post-init agent management",
+      "taskCompleted": true,
+      "durationMs": 230273,
+      "startedAt": "2026-03-03T14:03:23.792Z",
+      "endedAt": "2026-03-03T14:07:14.065Z"
     }
   ],
   "skippedTaskIds": [],
