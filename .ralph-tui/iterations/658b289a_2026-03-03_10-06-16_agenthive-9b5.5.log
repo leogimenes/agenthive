@@ -1,0 +1,149 @@
+# Iteration 5 Log
+
+## Metadata
+
+- **Task ID**: agenthive-9b5.5
+- **Task Title**: US-005: User-defined template directories
+- **Description**: As a power user working across multiple projects I want to maintain custom templates in a global directory that are available in all projects So that I can share refined role definitions without copyi...
+- **Status**: completed
+- **Task Completed**: Yes
+- **Promise Detected**: Yes
+- **Started At**: 2026-03-03T13:06:16.469Z
+- **Ended At**: 2026-03-03T13:10:06.131Z
+- **Duration**: 3m 49s
+- **Input Tokens**: 87
+- **Output Tokens**: 13826
+- **Total Tokens**: 13913
+- **Agent**: claude
+- **Model**: claude-opus-4-6
+- **Epic**: agenthive-9b5
+- **Sandbox Mode**: auto
+- **Sandbox Network**: Enabled
+--- RAW OUTPUT ---
+[94m[TodoWrite][0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/config.ts[0m
+[94m[Glob][0m [95m/home/leonardosg/repos/projects/agenthive[0m pattern: [96msrc/**/*.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/templates.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/templates/embedded.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/types/config.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/config.ts[0m
+Now let me look at the existing tests to understand patterns.
+[94m[Glob][0m [95m/home/leonardosg/repos/projects/agenthive[0m pattern: [96mtests/**/*.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/config.test.ts[0m
+Good, I have a thorough understanding of the codebase. Let me now implement US-005.
+[94m[TodoWrite][0m
+First, add `TemplatesConfig` to the types and update the config loader.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/types/config.ts[0m edit: "export interface HooksConfig {
+  /** Safety hooks ..." → "export interface HooksConfig {
+  /** Safety hooks ..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/types/config.ts[0m edit: "  /** Hook configuration. */
+  hooks: HooksConfig;..." → "  /** Hook configuration. */
+  hooks: HooksConfig;..."
+Now update the config loader to parse the `templates` section.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/config.ts[0m edit: "import type {
+  HiveConfig,
+  DefaultsConfig,
+  Ag..." → "import type {
+  HiveConfig,
+  DefaultsConfig,
+  Ag..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/config.ts[0m edit: "  return { session, defaults, agents, chat, hooks ..." → "  // Templates
+  const rawTemplates = (raw.templat..."
+[94m[TodoWrite][0m
+Now I'll implement the template resolution logic and update the templates command. The core change is to make `templates.ts` discover templates from three sources (bundled → global → local) with later sources overriding earlier ones.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/templates.ts[0m
+Now I'll rewrite the templates command with multi-directory resolution support. The key changes:
+
+1. Add `ResolvedTemplate` type and `discoverTemplates()` function
+2. Update `runList` to show source column
+3. Update `runShow` and `runInstall` to resolve from all directories
+4. Update `getTemplateStatus` to compare against the resolved source (not just bundled)
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/templates.ts[0m "import { Command } from 'commander';
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+  mkdirSync,
+  unlinkSync,
+} from 'node:fs';
+import { join, resolve, basename } from 'node:p... (10923 chars)"
+[94m[TodoWrite][0m
+Now let me first run a quick typecheck to make sure the changes so far compile, then write the tests.
+[94m[Bash][0m Run TypeScript type checking $ npm run typecheck 2>&1
+
+[91m[Error: Exit code 2
+
+> agenthive@0.1.0 typecheck
+> tsc --noEmit
+
+src/commands/init.ts(327,3): error TS2741: Property 'templates' is missing in type '{ session: string; defaults: DefaultsConfig; agents: Record<string, AgentConfig>; chat: { file: string; role_map: Record<string, string>; }; hooks: { ...; }; }' but required in type 'HiveConfig'.
+
+
+> agenthive@0.1.0 typecheck
+> tsc --noEmit
+
+src/commands/init.ts(327,3): error TS2741: Property 'templates' is missing in type '{ session: string; defaults: DefaultsConfig; agents: Record<string, AgentConfig>; chat: { file: string; role_map: Record<string, string>; }; hooks: { ...; }; }' but required in type 'HiveConfig'.][0m
+Need to fix the init command that also builds a HiveConfig object.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m edit: "    hooks: {
+      safety: ['destructive-guard'],
+..." → "    hooks: {
+      safety: ['destructive-guard'],
+..."
+[94m[Bash][0m Run TypeScript type checking $ npm run typecheck 2>&1
+Typecheck passes. Now let me write the tests.
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/templates.test.ts[0m "import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+} from 'node:fs';
+import { join } from 'node:path';
+import { tmpdi... (5158 chars)"
+[94m[Bash][0m Run all tests $ npm test 2>&1
+All 122 tests pass (9 new ones). Now let me run the full quality check.
+[94m[TodoWrite][0m
+[94m[Bash][0m Build TypeScript to dist/ $ npm run build 2>&1
+All three quality gates pass:
+- `npm run typecheck` — clean
+- `npm test` — 122 tests pass (6 suites)
+- `npm run build` — compiles successfully
+[94m[TodoWrite][0m
+Now close the bead and document learnings.
+[94m[Bash][0m Close the bead $ bd close agenthive-9b5.5 --db /home/leonardosg/repos/projects/agenthive/.beads/beads.db --reason "Im...
+Now document the learnings in progress.md.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "- **Chat message format**: `[ROLE] TYPE <ISO8601_T..." → "- **Chat message format**: `[ROLE] TYPE <ISO8601_T..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "  - Quality checks: typecheck, 113 tests (5 suites..." → "  - Quality checks: typecheck, 113 tests (5 suites..."
+
+[91m[Error: <tool_use_error>Found 3 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.
+String:   - Quality checks: typecheck, 113 tests (5 suites), build all pass
+---
+
+</tool_use_error>][0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "  - `resolveHiveRoot` throws when no `.hive/` dire..." → "  - `resolveHiveRoot` throws when no `.hive/` dire..."
+[94m[TodoWrite][0m
+## Summary
+
+Implemented US-005: User-defined template directories. Here's what was done:
+
+**Files changed:**
+- `src/types/config.ts` — Added `TemplatesConfig` interface with optional `dir` field
+- `src/core/config.ts` — Parse new `templates` section from config YAML
+- `src/commands/templates.ts` — Major refactor: added three-tier template discovery (`discoverTemplates()`), source column in `list`, multi-directory resolution in `show`/`install`/`diff`
+- `src/commands/init.ts` — Added `templates: {}` to HiveConfig construction (type fix)
+- `tests/core/templates.test.ts` — New file with 9 tests
+
+**Acceptance criteria met:**
+1. Templates in `~/.config/agenthive/templates/` are discovered by `hive templates list` and `install`
+2. Resolution order: bundled → global → project-local (later overrides earlier)
+3. `hive templates list` shows SOURCE column (bundled/global/local) with color coding
+4. `templates.dir` config option in `.hive/config.yaml` overrides project-local template path
+5. Project-local templates take precedence over global ones with the same name
+
+**Quality gates:** typecheck clean, 122 tests pass (6 suites), build succeeds.
+
+<promise>COMPLETE</promise>
