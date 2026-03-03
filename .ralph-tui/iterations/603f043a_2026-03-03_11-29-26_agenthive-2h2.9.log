@@ -1,0 +1,198 @@
+# Iteration 10 Log
+
+## Metadata
+
+- **Task ID**: agenthive-2h2.9
+- **Task Title**: US-009: Configuration profiles
+- **Description**: From: `prd-features.md` US-010 (partial)
+- **Status**: completed
+- **Task Completed**: Yes
+- **Promise Detected**: Yes
+- **Started At**: 2026-03-03T14:29:26.730Z
+- **Ended At**: 2026-03-03T14:35:25.148Z
+- **Duration**: 5m 58s
+- **Input Tokens**: 4826
+- **Output Tokens**: 17435
+- **Total Tokens**: 22261
+- **Agent**: claude
+- **Model**: claude-opus-4-6
+- **Epic**: agenthive-2h2
+- **Sandbox Mode**: auto
+- **Sandbox Network**: Enabled
+--- RAW OUTPUT ---
+[94m[TodoWrite][0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/config.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/types/config.ts[0m
+Now let me look at how templates and hooks are embedded, and check the existing template/profile structure.
+[94m[Agent][0m Explore embedding patterns
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/index.ts[0m
+[94m[Glob][0m [95m/home/leonardosg/repos/projects/agenthive[0m pattern: [96msrc/**/*.ts[0m
+[94m[Glob][0m [95m/home/leonardosg/repos/projects/agenthive[0m pattern: [96mscripts/**[0m
+[94m[Glob][0m [95m/home/leonardosg/repos/projects/agenthive[0m pattern: [96msrc/hooks/**[0m
+[94m[Glob][0m [95m/home/leonardosg/repos/projects/agenthive[0m pattern: [96msrc/templates/**[0m
+[94m[Bash][0m Search for embedded-related files $ find /home/leonardosg/repos/projects/agenthive -name "embedded.ts" -o -name "*embed*" 2>/dev/null | ...
+[94m[Bash][0m Search for YAML template files $ find /home/leonardosg/repos/projects/agenthive -name "*.yaml" -o -name "*.yml" 2>/dev/null | head -2...
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/hooks/embedded.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/templates/embedded.ts[0m
+[94m[Bash][0m List all files in templates directory $ find /home/leonardosg/repos/projects/agenthive/templates -type f 2>/dev/null | head -30
+[94m[Bash][0m List templates directory structure $ ls -la /home/leonardosg/repos/projects/agenthive/templates/ 2>/dev/null
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/config.yaml[0m
+[94m[Bash][0m Find all subdirectories in templates $ find /home/leonardosg/repos/projects/agenthive/templates -type d
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/scripts/build-binary.ts[0m
+[94m[Grep][0m [95m/home/leonardosg/repos/projects/agenthive/src[0m pattern: [96mEMBEDDED|embedded|templates|hooks[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/templates.ts[0m
+[94m[Grep][0m [95m/home/leonardosg/repos/projects/agenthive/src[0m pattern: [96mEMBEDDED_TEMPLATES|EMBEDDED_HOOKS[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/package.json[0m
+[94m[Bash][0m Check if there's a generation script in package.json $ 
+[94m[Bash][0m List all agent template files $ ls -la /home/leonardosg/repos/projects/agenthive/templates/agents/
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/sre.md[0m
+[94m[Bash][0m Check if there are any references to profiles in the source code $ grep -r "profiles" /home/leonardosg/repos/projects/agenthive/src --include="*.ts" 2>/dev/null | head...
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/config.yaml[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/templates/embedded.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m
+Good, I now have a thorough understanding. Let me also look at the test patterns.
+[94m[Glob][0m pattern: [96mtests/**/*.test.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/config.test.ts[0m
+[94m[TodoWrite][0m
+Now I have a clear plan. Let me implement the configuration profiles. I'll create:
+
+1. YAML profile files in `templates/profiles/`
+2. An embedded profiles module at `src/profiles/embedded.ts`
+3. Update `init.ts` to load full profiles instead of just agent lists
+4. Add `--list-presets` flag
+5. Update shell completions
+
+Let me start by creating the profile YAML files and the embedded module.
+[94m[Bash][0m Create profiles directory $ mkdir -p /home/leonardosg/repos/projects/agenthive/templates/profiles
+Now let me create the five profile YAML files. Each profile sets agents, defaults (budget, poll, model), and hooks — not just agent names.
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/templates/profiles/fullstack.yaml[0m "# AgentHive Profile: Full-Stack Development
+# A comprehensive setup for full-stack projects with frontend, backend, QA, SRE, and security agents.
+
+defaults:
+  poll: 60
+  budget: 2.00
+  daily_max: 20.0... (739 chars)"
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/templates/profiles/security-audit.yaml[0m "# AgentHive Profile: Security Audit
+# Focused on security analysis with dedicated security, QA, and SRE agents.
+# Higher budgets for thorough analysis and slower polling for deep work.
+
+defaults:
+  po... (812 chars)"
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/templates/profiles/refactor.yaml[0m "# AgentHive Profile: Refactoring
+# Optimized for large-scale codebase refactoring with backend, QA, and SRE agents.
+# Higher budgets for complex multi-file changes, QA runs frequently to catch regress... (754 chars)"
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/templates/profiles/solo.yaml[0m "# AgentHive Profile: Solo Developer
+# Minimal setup with a single backend agent — ideal for solo projects or quick tasks.
+# Lower budget caps and faster polling for tight iteration loops.
+
+defaults:
+ ... (496 chars)"
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/templates/profiles/review.yaml[0m "# AgentHive Profile: Code Review
+# Setup for thorough code review with security, QA, and backend agents.
+# Lower budgets per task (reviews are shorter), higher polling frequency.
+
+defaults:
+  poll: 90... (732 chars)"
+[94m[TodoWrite][0m
+Now let me create the embedded profiles module. I'll follow the same pattern used by `src/hooks/embedded.ts` and `src/templates/embedded.ts`.
+[94m[Bash][0m Create profiles source directory $ mkdir -p /home/leonardosg/repos/projects/agenthive/src/profiles
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/src/profiles/embedded.ts[0m "// Embedded configuration profiles — bundled as string constants so they ship with
+// any distribution format (tsc, Bun compile, npm package).
+//
+// If you edit the YAML files in templates/profiles/, ... (5889 chars)"
+[94m[TodoWrite][0m
+Now let me update `init.ts` to use full profiles instead of just agent name lists. The key changes:
+
+1. Replace the old `PRESETS` map with profile-based loading
+2. `--preset <name>` loads the full YAML profile, not just agent names
+3. Add `--list-presets` flag
+4. Keep backward compatibility with `AVAILABLE_AGENTS` for interactive selection and `--agents` mode
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m
+Now I'll rewrite `init.ts` to integrate full profile support. The key changes:
+
+1. Import `EMBEDDED_PROFILES` 
+2. Replace `PRESETS` with profile-based lookup
+3. When `--preset` is used, parse the profile YAML to get the full config
+4. Add `--list-presets` option
+5. Keep `AVAILABLE_AGENTS` for interactive mode and `--agents` mode
+6. The `buildConfig` function gets an optional profile override path
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m edit: "import { Command } from 'commander';
+import { exis..." → "import { Command } from 'commander';
+import { exis..."
+Now update the command registration to add `--list-presets` and update the `--preset` help text:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m edit: "export function registerInitCommand(program: Comma..." → "export function registerInitCommand(program: Comma..."
+Now update the `runInit` function to handle profile-based presets. The key change is that `--preset` now loads a full config from the profile YAML instead of just picking agent names:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m edit: "async function runInit(
+  cwd: string,
+  opts: { a..." → "async function runInit(
+  cwd: string,
+  opts: { a..."
+Now I need to add the `listPresets()` and `buildConfigFromProfile()` helper functions. Let me update the helpers section:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m edit: "// ── Helpers ────────────────────────────────────..." → "// ── Helpers ────────────────────────────────────..."
+Now add the `buildConfigFromProfile()` function after `buildConfig`:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m edit: "function buildConfig(
+  cwd: string,
+  agentNames:..." → "function buildConfig(
+  cwd: string,
+  agentNames:..."
+Now let me also update the `installTemplates` function — the template name resolution needs to work for profile-loaded agents too. Let me check the current logic... The `installTemplates` function uses `AVAILABLE_AGENTS[agentName]?.agent` to resolve the template name. For profile-loaded agents, the agent definition is already in `config.agents`, so I should use the config's agent field:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m edit: "  for (const agentName of selectedAgents) {
+    co..." → "  for (const agentName of selectedAgents) {
+    co..."
+Let me verify the full file looks correct:
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m
+Good, the file looks correct. Now let me update the shell completions to include the new preset names:
+[94m[TodoWrite][0m
+Now update the completions to include the new profile names and the `--list-presets` flag. I need to update three places in the completion file: bash, zsh, and fish.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m edit: "    init)
+      COMPREPLY=( $(compgen -W "--agents..." → "    init)
+      COMPREPLY=( $(compgen -W "--agents..."
+
+[91m[Error: <tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>][0m
+I already read it earlier. Let me re-read it:
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m
+Now let me update all three completion sections. The profile names are: `fullstack`, `security-audit`, `refactor`, `solo`, `review`, `backend-only`, `minimal`.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m edit: "    init)
+      COMPREPLY=( $(compgen -W "--agents..." → "    init)
+      if [[ "$prev" == "--preset" ]]; th..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m edit: "    init)
+      _arguments \\
+        '--agents[Co..." → "    init)
+      _arguments \\
+        '--agents[Co..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m edit: "  lines.push('');
+  lines.push('# init options');
+..." → "  lines.push('');
+  lines.push('# init options');
+..."
+[94m[TodoWrite][0m
+Now let me run the quality checks:
+[94m[Bash][0m Run TypeScript type checking $ npm run typecheck 2>&1
+[94m[Bash][0m Run vitest tests $ npm test 2>&1
+[94m[Bash][0m Run TypeScript build $ npm run build 2>&1
+All quality checks pass. Now let me update progress.md and close the bead:
+[94m[TodoWrite][0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "  - `await new Promise(() => {})` is a clean patte..." → "  - `await new Promise(() => {})` is a clean patte..."
+[94m[Bash][0m Close the bead $ bd close agenthive-2h2.9 --db .beads/beads.db --reason "Implemented configuration profiles with 7 fu...
+[94m[TodoWrite][0m
+<promise>COMPLETE</promise>
+
+## Summary
+
+Implemented US-009: Configuration profiles for AgentHive. Here's what was done:
+
+### New files
+- **`templates/profiles/`** — 5 YAML profile files (`fullstack.yaml`, `security-audit.yaml`, `refactor.yaml`, `solo.yaml`, `review.yaml`)
+- **`src/profiles/embedded.ts`** — Embedded profiles module with 7 profiles (the 5 above + `backend-only` and `minimal` migrated from old format), each containing full config with agents, defaults (budget, poll, model), and hooks
+
+### Modified files
+- **`src/commands/init.ts`** — `--preset <name>` now loads full YAML profile via `buildConfigFromProfile()` instead of just selecting agent names. Added `--list-presets` flag to show all available profiles with descriptions and agent lists. Migrated existing `fullstack`/`backend-only`/`minimal` presets to profile format.
+- **`src/commands/completion.ts`** — Updated bash, zsh, and fish completions with all 7 profile names and the new `--list-presets` flag
+
+### Quality gates
+- `npm run typecheck` — passed
+- `npm test` — 166 tests passed (8 suites)
+- `npm run build` — passed
