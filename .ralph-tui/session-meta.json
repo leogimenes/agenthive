@@ -1,13 +1,14 @@
 {
-  "id": "567b3db8-4003-4396-989f-6241be96610e",
+  "id": "658b289a-22b8-44d3-b28c-70e108b85935",
   "status": "running",
-  "startedAt": "2026-03-02T19:11:08.342Z",
-  "updatedAt": "2026-03-02T19:39:35.118Z",
+  "startedAt": "2026-03-03T12:36:01.858Z",
+  "updatedAt": "2026-03-03T12:36:01.858Z",
   "agentPlugin": "claude",
   "trackerPlugin": "beads-bv",
-  "currentIteration": 5,
-  "maxIterations": 10,
+  "epicId": "agenthive-9b5",
+  "currentIteration": 0,
+  "maxIterations": 2,
   "totalTasks": 0,
-  "tasksCompleted": 5,
+  "tasksCompleted": 0,
   "cwd": "/home/leonardosg/repos/projects/agenthive"
 }

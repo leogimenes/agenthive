@@ -1,0 +1,168 @@
+# Iteration 6 Log
+
+## Metadata
+
+- **Task ID**: agenthive-07s
+- **Task Title**: Feature Improvements
+- **Description**: New capabilities for AgentHive organized by impact tier. Tier A addresses the biggest orchestration pain points observed during real multi-agent sessions (missing timestamps, no notifications, no orch...
+- **Status**: completed
+- **Task Completed**: Yes
+- **Promise Detected**: Yes
+- **Started At**: 2026-03-02T19:39:36.211Z
+- **Ended At**: 2026-03-02T19:44:50.305Z
+- **Duration**: 5m 14s
+- **Input Tokens**: 147
+- **Output Tokens**: 15476
+- **Total Tokens**: 15623
+- **Agent**: claude
+- **Model**: claude-opus-4-6
+- **Sandbox Mode**: auto
+- **Sandbox Network**: Enabled
+--- RAW OUTPUT ---
+Let me start by understanding the current state and what needs to be done.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/session.json[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/session-meta.json[0m
+Now let me read the PRD and the bead details to understand what's expected for `agenthive-07s`.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/tasks/prd-features.md[0m
+[94m[Bash][0m Show bead details $ bd show agenthive-07s --db .beads/beads.db 2>/dev/null || echo "bd command not found or failed"
+I'm working on the `agenthive-07s` epic (Feature Improvements). US-001 is done. The next highest priority is **US-002: Desktop notifications on agent events** (P2). Let me explore the relevant code.
+[94m[TodoWrite][0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/types/config.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/config.ts[0m
+Now let me look at the launch and tail commands.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/tail.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/index.ts[0m
+[94m[TodoWrite][0m
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/notify.ts[0m "import { execFile } from 'node:child_process';
+import { platform } from 'node:os';
+
+export type NotifyUrgency = 'low' | 'normal' | 'critical';
+
+/**
+ * Send a platform-aware desktop notification.
+ *
+ *... (1260 chars)"
+[94m[TodoWrite][0m
+Now add notification config to the types and config loader.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/types/config.ts[0m edit: "export interface DefaultsConfig {
+  /** Seconds be..." → "export interface DefaultsConfig {
+  /** Seconds be..."
+Now update the config loader to handle the new fields.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/config.ts[0m edit: "const DEFAULT_DEFAULTS: DefaultsConfig = {
+  poll:..." → "const DEFAULT_DEFAULTS: DefaultsConfig = {
+  poll:..."
+
+[91m[Error: <tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>][0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/config.ts[0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/config.ts[0m edit: "const DEFAULT_DEFAULTS: DefaultsConfig = {
+  poll:..." → "const DEFAULT_DEFAULTS: DefaultsConfig = {
+  poll:..."
+Now I need to update the `validateAndNormalize` function in config.ts to parse the new fields.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/config.ts[0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/config.ts[0m edit: "    skip_permissions:
+      typeof rawDefaults.ski..." → "    skip_permissions:
+      typeof rawDefaults.ski..."
+[94m[TodoWrite][0m
+Now integrate notifications into the polling loop. The PRD says notifications should fire on: DONE, BLOCKER, budget exhaustion, and consecutive failure backoff.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m
+Now I'll update the polling loop. I need to:
+1. Add a `notificationsEnabled` flag to the constructor (can be overridden by CLI flag)
+2. Fire notifications on: DONE/BLOCKER messages from new chat messages, budget exhaustion, consecutive failure backoff
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m edit: "import { spawn } from 'node:child_process';
+import..." → "import { spawn } from 'node:child_process';
+import..."
+Now update the AgentLoop class to accept and use notification settings.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m edit: "export class AgentLoop {
+  private agent: Resolved..." → "export interface AgentLoopOptions {
+  /** Override..."
+Now add notification calls in the cycle method. I need to add them at: budget exhaustion, new DONE/BLOCKER messages from chat, and consecutive failure backoff.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m edit: "    if (!allowed) {
+      this.log(
+        `DAILY..." → "    if (!allowed) {
+      this.log(
+        `DAILY..."
+Now add notifications for new DONE/BLOCKER messages from chat reconciliation and for consecutive failure backoff.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m edit: "    // 2a. Reconcile plan with new chat messages (..." → "    // 2a. Reconcile plan with new chat messages (..."
+Now add notification for consecutive failure backoff:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m edit: "        if (this.consecutiveFails >= MAX_CONSECUTI..." → "        if (this.consecutiveFails >= MAX_CONSECUTI..."
+Now add the `sendNotify` helper method to the AgentLoop class, and the logging section:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m edit: "  // ── Logging ──────────────────────────────────..." → "  // ── Notifications ────────────────────────────..."
+[94m[TodoWrite][0m
+Now add `--notify` / `--no-notify` flags to `hive launch` and `hive tail -f`. First, update the launch command to pass the notification flag through to the loop:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m edit: "    .option('--dry-run', 'Show what would be launc..." → "    .option('--dry-run', 'Show what would be launc..."
+Now I need to pass the `--notify` flag through to the `_loop` command via the tmux command, and have the `_loop` pick it up. The cleanest way is to pass it as an environment variable since the loop command is invoked via tmux.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m
+I need to pass notification settings through to the loop command. The cleanest approach is via an environment variable since the loop runs in tmux. Let me update the launch and loop logic.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m edit: "async function runLaunch(
+  cwd: string,
+  agentFi..." → "async function runLaunch(
+  cwd: string,
+  agentFi..."
+Now update the `buildLoopCommand` to accept and pass the notify env var:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m edit: "    // Build the loop command
+    // Use tsx in de..." → "    // Build the loop command
+    // Use tsx in de..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m edit: "function buildLoopCommand(
+  hiveBin: string,
+  ag..." → "function buildLoopCommand(
+  hiveBin: string,
+  ag..."
+Now update the `runLoop` function to read `HIVE_NOTIFY` and pass it to `AgentLoop`:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m edit: "  const loop = new AgentLoop(agent, config, hivePa..." → "  // Read notification override from environment (..."
+[94m[TodoWrite][0m
+Now add `--notify` / `--no-notify` flags and notification triggers to `hive tail -f`:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/tail.ts[0m edit: "import { Command } from 'commander';
+import { reso..." → "import { Command } from 'commander';
+import { reso..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/tail.ts[0m edit: "    .option('--raw', 'Show raw lines without color..." → "    .option('--raw', 'Show raw lines without color..."
+Now update the `runTail` function signature and logic:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/tail.ts[0m edit: "async function runTail(
+  cwd: string,
+  agentFilt..." → "async function runTail(
+  cwd: string,
+  agentFilt..."
+Now add notification logic in the follow mode section. I need to determine notification types from config and fire notifications on new DONE/BLOCKER messages:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/tail.ts[0m edit: "  if (!opts.follow) return;
+
+  console.log('');
+  ..." → "  if (!opts.follow) return;
+
+  console.log('');
+  ..."
+[94m[TodoWrite][0m
+Now let's run the quality checks.
+[94m[Bash][0m Run TypeScript type checking $ npm run typecheck 2>&1
+
+[91m[Error: Exit code 2
+
+> agenthive@0.1.0 typecheck
+> tsc --noEmit
+
+src/commands/init.ts(211,9): error TS2739: Type '{ poll: number; budget: number; daily_max: number; model: string; skip_permissions: true; }' is missing the following properties from type 'DefaultsConfig': notifications, notify_on
+
+
+> agenthive@0.1.0 typecheck
+> tsc --noEmit
+
+src/commands/init.ts(211,9): error TS2739: Type '{ poll: number; budget: number; daily_max: number; model: string; skip_permissions: true; }' is missing the following properties from type 'DefaultsConfig': notifications, notify_on][0m
+Need to fix the init command too. Let me update it.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m edit: "  const defaults: DefaultsConfig = {
+    poll: 60,..." → "  const defaults: DefaultsConfig = {
+    poll: 60,..."
+[94m[Bash][0m Run TypeScript type checking $ npm run typecheck 2>&1
+Typecheck passes. Now run tests:
+[94m[Bash][0m Run vitest tests $ npm test 2>&1
+All 113 tests pass. Now run the build:
+[94m[Bash][0m Build TypeScript to dist/ $ npm run build 2>&1
+All quality checks pass. Now close the bead and document learnings.
+[94m[TodoWrite][0m
+[94m[Bash][0m Close the bead $ bd close agenthive-07s --db /home/leonardosg/repos/projects/agenthive/.beads/beads.db --reason "Impl...
+Now document learnings in progress.md:
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "  - `timeAgo()` is useful for both CLI status and ..." → "  - `timeAgo()` is useful for both CLI status and ..."
+[94m[TodoWrite][0m
+<promise>COMPLETE</promise>

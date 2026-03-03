@@ -5,7 +5,7 @@
 configVersion = "2.1"
 tracker = "beads-bv"
 agent = "claude"
-maxIterations = 10
+maxIterations = 2
 autoCommit = true
 
 [trackerOptions]
