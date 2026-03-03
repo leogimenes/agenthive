@@ -1,12 +1,13 @@
 import { Command } from 'commander';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { join, resolve, basename } from 'node:path';
-import { checkbox } from '@inquirer/prompts';
+import { checkbox, confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { stringify as toYaml } from 'yaml';
 import { createWorktree, isGitRepo, getMainBranch } from '../core/worktree.js';
 import { initChatFile } from '../core/chat.js';
 import { EMBEDDED_HOOKS } from '../hooks/embedded.js';
+import { EMBEDDED_TEMPLATES } from '../templates/embedded.js';
 import type { HiveConfig, AgentConfig, DefaultsConfig } from '../types/config.js';
 
 // ── Presets ─────────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ export function registerInitCommand(program: Command): void {
       `Use a predefined agent set (${Object.keys(PRESETS).join(', ')})`,
     )
     .option('--yes', 'Skip interactive prompts, use defaults')
+    .option('--templates [value]', 'Install agent prompt templates (default: auto, use "none" to skip)')
     .action(async (opts) => {
       const cwd = program.opts().cwd
         ? resolve(program.opts().cwd)
@@ -59,7 +61,7 @@ export function registerInitCommand(program: Command): void {
 
 async function runInit(
   cwd: string,
-  opts: { agents?: string; preset?: string; yes?: boolean },
+  opts: { agents?: string; preset?: string; yes?: boolean; templates?: string | boolean },
 ): Promise<void> {
   console.log(chalk.bold('\n🐝 AgentHive — Initializing\n'));
 
@@ -157,24 +159,114 @@ async function runInit(
     registerHooksInWorktree(worktreePath, hivePath, config.hooks);
   }
 
-  // 9. Update .gitignore
+  // 9. Install agent prompt templates
+  const installedTemplates = await installTemplates(cwd, selectedAgents, config, opts);
+
+  // 10. Update .gitignore
   updateGitignore(cwd);
 
-  // 10. Summary
+  // 11. Summary
   console.log(chalk.bold.green('\n✓ AgentHive initialized!\n'));
   console.log(`  Agents:   ${selectedAgents.join(', ')}`);
   console.log(`  Config:   ${chalk.gray('.hive/config.yaml')}`);
   console.log(`  Chat:     ${chalk.gray('.hive/chat.md')}`);
   console.log(`  Hooks:    ${chalk.gray('.hive/hooks/')}`);
+  if (installedTemplates.length > 0) {
+    console.log(`  Templates: ${chalk.gray(installedTemplates.map(t => `.claude/agents/${t}.md`).join(', '))}`);
+  }
   console.log('');
   console.log(chalk.bold('Next steps:'));
-  console.log(
-    `  1. Create agent definitions in ${chalk.cyan('.claude/agents/<name>.md')}`,
-  );
+  if (installedTemplates.length > 0) {
+    console.log(
+      `  1. Review agent definitions in ${chalk.cyan('.claude/agents/')} and customize as needed`,
+    );
+  } else {
+    console.log(
+      `  1. Create agent definitions in ${chalk.cyan('.claude/agents/<name>.md')}`,
+    );
+  }
   console.log(`  2. Edit ${chalk.cyan('.hive/config.yaml')} to tune budgets and poll intervals`);
   console.log(`  3. Run ${chalk.cyan('hive launch')} to start agents`);
   console.log(`  4. Run ${chalk.cyan('hive dispatch sre "your task"')} to assign work`);
   console.log('');
+}
+
+// ── Template installation ────────────────────────────────────────────
+
+async function installTemplates(
+  cwd: string,
+  selectedAgents: string[],
+  config: HiveConfig,
+  opts: { yes?: boolean; templates?: string | boolean },
+): Promise<string[]> {
+  // --templates=none → skip
+  if (opts.templates === 'none') {
+    return [];
+  }
+
+  // Determine whether to install:
+  // --templates (flag present with no value) or --yes → install
+  // Interactive mode (no --yes, no --templates flag) → ask
+  let shouldInstall: boolean;
+
+  if (opts.templates === true || opts.templates === '') {
+    // --templates flag passed explicitly
+    shouldInstall = true;
+  } else if (opts.yes) {
+    // --yes mode → install by default
+    shouldInstall = true;
+  } else if (opts.templates === undefined) {
+    // Interactive mode — ask the user
+    shouldInstall = await confirm({
+      message: 'Install agent prompt templates?',
+      default: true,
+    });
+  } else {
+    shouldInstall = false;
+  }
+
+  if (!shouldInstall) {
+    return [];
+  }
+
+  console.log(chalk.gray('\nInstalling agent prompt templates...'));
+
+  const agentsDir = join(cwd, '.claude', 'agents');
+  mkdirSync(agentsDir, { recursive: true });
+
+  const installed: string[] = [];
+  const skipped: string[] = [];
+
+  for (const agentName of selectedAgents) {
+    const preset = AVAILABLE_AGENTS[agentName];
+    const templateName = preset?.agent ?? agentName;
+    const template = EMBEDDED_TEMPLATES[templateName];
+
+    if (!template) {
+      continue; // No bundled template for this agent
+    }
+
+    const destPath = join(agentsDir, `${templateName}.md`);
+
+    if (existsSync(destPath)) {
+      skipped.push(templateName);
+      continue;
+    }
+
+    writeFileSync(destPath, template, 'utf-8');
+    installed.push(templateName);
+    console.log(
+      `  ${chalk.green('✓')} ${chalk.bold(templateName)} → ${chalk.gray(`.claude/agents/${templateName}.md`)}`,
+    );
+  }
+
+  for (const name of skipped) {
+    console.log(
+      `  ${chalk.yellow('⚠')} ${chalk.bold(name)} — .claude/agents/${name}.md already exists, skipped`,
+    );
+  }
+
+  return installed;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────

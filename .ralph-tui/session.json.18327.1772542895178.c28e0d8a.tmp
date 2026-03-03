@@ -3,10 +3,10 @@
   "sessionId": "658b289a-22b8-44d3-b28c-70e108b85935",
   "status": "running",
   "startedAt": "2026-03-03T12:36:02.212Z",
-  "updatedAt": "2026-03-03T12:41:37.153Z",
-  "currentIteration": 1,
+  "updatedAt": "2026-03-03T13:01:35.177Z",
+  "currentIteration": 2,
   "maxIterations": 2,
-  "tasksCompleted": 1,
+  "tasksCompleted": 2,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -23,8 +23,8 @@
       {
         "id": "agenthive-9b5.2",
         "title": "US-002: Write bundled templates for all standard roles",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "agenthive-9b5.3",
@@ -56,6 +56,16 @@
       "durationMs": 211982,
       "startedAt": "2026-03-03T12:36:37.460Z",
       "endedAt": "2026-03-03T12:40:09.442Z"
+    },
+    {
+      "iteration": 2,
+      "status": "completed",
+      "taskId": "agenthive-9b5.2",
+      "taskTitle": "US-002: Write bundled templates for all standard roles",
+      "taskCompleted": true,
+      "durationMs": 86240,
+      "startedAt": "2026-03-03T12:40:10.758Z",
+      "endedAt": "2026-03-03T12:41:36.998Z"
     }
   ],
   "skippedTaskIds": [],

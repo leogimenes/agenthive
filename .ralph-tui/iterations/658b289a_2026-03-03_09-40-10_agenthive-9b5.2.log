@@ -1,0 +1,55 @@
+# Iteration 2 Log
+
+## Metadata
+
+- **Task ID**: agenthive-9b5.2
+- **Task Title**: US-002: Write bundled templates for all standard roles
+- **Description**: As a developer setting up AgentHive for the first time I want high-quality prompt templates for common engineering roles So that my agents have effective system prompts without me writing them from sc...
+- **Status**: completed
+- **Task Completed**: Yes
+- **Promise Detected**: Yes
+- **Started At**: 2026-03-03T12:40:10.758Z
+- **Ended At**: 2026-03-03T12:41:36.998Z
+- **Duration**: 1m 26s
+- **Input Tokens**: 45
+- **Output Tokens**: 3538
+- **Total Tokens**: 3583
+- **Agent**: claude
+- **Model**: claude-opus-4-6
+- **Epic**: agenthive-9b5
+- **Sandbox Mode**: auto
+- **Sandbox Network**: Enabled
+--- RAW OUTPUT ---
+[94m[TodoWrite][0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/hooks/embedded.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m
+[94m[Glob][0m pattern: [96mtemplates/agents/*.md[0m
+The templates were already created in US-001. Let me read them all to verify they meet the US-002 acceptance criteria for content quality and role-specific requirements.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/sre.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/frontend.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/backend.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/qa.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/appsec.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/devops.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/pm.md[0m
+All 7 templates already exist and meet every US-002 acceptance criterion. Let me verify with the quality checks.
+[94m[TodoWrite][0m
+[94m[Bash][0m Run TypeScript type checking $ npm run typecheck 2>&1
+[94m[Bash][0m Run vitest tests $ npm test 2>&1
+[94m[Bash][0m Run TypeScript compilation $ npm run build 2>&1
+All quality checks pass. Now let me close the bead and update progress.
+[94m[TodoWrite][0m
+[94m[Bash][0m Close the bead $ bd close agenthive-9b5.2 --db /home/leonardosg/repos/projects/agenthive/.beads/beads.db --reason "Al...
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "  - This is a content-only change (markdown files)..." → "  - This is a content-only change (markdown files)..."
+[94m[TodoWrite][0m
+US-002 was already fully implemented during US-001. All 7 bundled agent templates exist in `templates/agents/` and satisfy every acceptance criterion:
+
+- **All 7 roles covered**: sre.md, frontend.md, backend.md, qa.md, appsec.md, devops.md, pm.md
+- **67-69 lines each** (within the 40-80 requirement)
+- **Role-specific focus + boundaries**: each template has clear responsibilities and out-of-scope items matching the AC exactly
+- **Full chat protocol**: DONE, BLOCKER, REQUEST, STATUS, QUESTION message types with role-appropriate examples
+- **Quality gates**: typecheck, 113 tests, and build all pass
+
+<promise>COMPLETE</promise>

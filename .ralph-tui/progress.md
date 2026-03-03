@@ -34,3 +34,22 @@ after each iteration and it's included in prompts for context.
   - Quality checks: typecheck, 113 tests (5 suites), build all pass
 ---
 
+## 2026-03-03 - agenthive-9b5.3
+- Created `src/templates/embedded.ts` with all 7 agent templates as string constants (mirrors the `src/hooks/embedded.ts` pattern for distribution compatibility)
+- Modified `src/commands/init.ts` to add template installation during `hive init`:
+  - Added `--templates [value]` CLI option
+  - `--templates` (flag only) or `--yes` → installs templates automatically
+  - `--templates=none` → explicitly skips installation
+  - Interactive mode (no flags) → prompts "Install agent prompt templates? (Y/n)"
+  - Templates installed to `.claude/agents/<name>.md` in the project root
+  - Existing files are skipped with a warning (no overwrites)
+  - Summary output lists installed templates
+  - "Next steps" text adapts based on whether templates were installed
+- Template filename uses the `agent` field from presets (e.g., `security` preset → `appsec.md`)
+- **Learnings:**
+  - Commander's `--option [value]` (optional value) gives `true` when flag is passed without a value, `undefined` when omitted, and the string value when `--option=something` is used
+  - The `confirm` prompt from `@inquirer/prompts` works the same as `checkbox` — already available as a named export
+  - The `installTemplates` function doesn't need to use `config` parameter — the `AVAILABLE_AGENTS` constant is sufficient for preset→agent name mapping. Kept the parameter for consistency with the function signature pattern.
+  - Quality checks: typecheck, 113 tests (5 suites), build all pass
+---
+
