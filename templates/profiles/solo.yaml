@@ -1,0 +1,25 @@
+# AgentHive Profile: Solo Developer
+# Minimal setup with a single backend agent — ideal for solo projects or quick tasks.
+# Lower budget caps and faster polling for tight iteration loops.
+
+defaults:
+  poll: 45
+  budget: 2.00
+  daily_max: 15.00
+  model: sonnet
+  skip_permissions: true
+  notifications: false
+  notify_on:
+    - DONE
+    - BLOCKER
+
+agents:
+  backend:
+    description: "Backend Engineer"
+    agent: backend
+
+hooks:
+  safety:
+    - destructive-guard
+  coordination:
+    - check-chat

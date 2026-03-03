@@ -1,0 +1,33 @@
+# AgentHive Profile: Refactoring
+# Optimized for large-scale codebase refactoring with backend, QA, and SRE agents.
+# Higher budgets for complex multi-file changes, QA runs frequently to catch regressions.
+
+defaults:
+  poll: 60
+  budget: 3.00
+  daily_max: 30.00
+  model: sonnet
+  skip_permissions: true
+  notifications: false
+  notify_on:
+    - DONE
+    - BLOCKER
+
+agents:
+  backend:
+    description: "Backend Engineer — primary refactoring agent"
+    agent: backend
+    budget: 5.00
+  qa:
+    description: "Quality Analyst — continuous regression testing"
+    agent: qa
+    poll: 45
+  sre:
+    description: "Site Reliability Engineer — build and CI verification"
+    agent: sre
+
+hooks:
+  safety:
+    - destructive-guard
+  coordination:
+    - check-chat

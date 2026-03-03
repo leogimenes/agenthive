@@ -1,0 +1,37 @@
+# AgentHive Profile: Security Audit
+# Focused on security analysis with dedicated security, QA, and SRE agents.
+# Higher budgets for thorough analysis and slower polling for deep work.
+
+defaults:
+  poll: 120
+  budget: 5.00
+  daily_max: 40.00
+  model: sonnet
+  skip_permissions: true
+  notifications: true
+  notify_on:
+    - DONE
+    - BLOCKER
+    - WARN
+
+agents:
+  security:
+    description: "Security Engineer — lead auditor"
+    agent: appsec
+    budget: 8.00
+    poll: 90
+  backend:
+    description: "Backend Engineer — assists with code review"
+    agent: backend
+  qa:
+    description: "Quality Analyst — regression testing"
+    agent: qa
+  sre:
+    description: "Site Reliability Engineer — infra and config review"
+    agent: sre
+
+hooks:
+  safety:
+    - destructive-guard
+  coordination:
+    - check-chat

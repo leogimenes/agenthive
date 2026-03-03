@@ -1,0 +1,38 @@
+# AgentHive Profile: Full-Stack Development
+# A comprehensive setup for full-stack projects with frontend, backend, QA, SRE, and security agents.
+
+defaults:
+  poll: 60
+  budget: 2.00
+  daily_max: 20.00
+  model: sonnet
+  skip_permissions: true
+  notifications: false
+  notify_on:
+    - DONE
+    - BLOCKER
+
+agents:
+  sre:
+    description: "Site Reliability Engineer"
+    agent: sre
+  frontend:
+    description: "Frontend Developer"
+    agent: frontend
+    poll: 90
+  backend:
+    description: "Backend Engineer"
+    agent: backend
+  qa:
+    description: "Quality Analyst"
+    agent: qa
+    poll: 90
+  security:
+    description: "Security Engineer"
+    agent: appsec
+
+hooks:
+  safety:
+    - destructive-guard
+  coordination:
+    - check-chat

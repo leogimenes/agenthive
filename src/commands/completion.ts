@@ -106,7 +106,11 @@ _hive_completions() {
   # Per-command flag completion
   case "$cmd" in
     init)
-      COMPREPLY=( $(compgen -W "--agents --preset --yes --templates --help" -- "$cur") )
+      if [[ "$prev" == "--preset" ]]; then
+        COMPREPLY=( $(compgen -W "fullstack security-audit refactor solo review backend-only minimal" -- "$cur") )
+      else
+        COMPREPLY=( $(compgen -W "--agents --preset --list-presets --yes --templates --help" -- "$cur") )
+      fi
       ;;
     launch)
       COMPREPLY=( $(compgen -W "--dry-run --attach --force --notify --no-notify --help" -- "$cur") )
@@ -267,7 +271,8 @@ _hive() {
     init)
       _arguments \\
         '--agents[Comma-separated agent names]:agents:' \\
-        '--preset[Use a predefined agent set]:preset:(fullstack backend-only minimal)' \\
+        '--preset[Use a configuration profile]:preset:(fullstack security-audit refactor solo review backend-only minimal)' \\
+        '--list-presets[Show available configuration profiles]' \\
         '--yes[Skip interactive prompts]' \\
         '--templates[Install agent prompt templates]:value:'
       ;;
@@ -419,7 +424,8 @@ function fishCompletion(): string {
   lines.push('');
   lines.push('# init options');
   lines.push('complete -c hive -n "__hive_using_subcommand init" -l agents -d "Comma-separated agent names"');
-  lines.push('complete -c hive -n "__hive_using_subcommand init" -l preset -d "Use predefined agent set" -a "fullstack backend-only minimal"');
+  lines.push('complete -c hive -n "__hive_using_subcommand init" -l preset -d "Use a configuration profile" -a "fullstack security-audit refactor solo review backend-only minimal"');
+  lines.push('complete -c hive -n "__hive_using_subcommand init" -l list-presets -d "Show available configuration profiles"');
   lines.push('complete -c hive -n "__hive_using_subcommand init" -l yes -d "Skip interactive prompts"');
   lines.push('complete -c hive -n "__hive_using_subcommand init" -l templates -d "Install agent prompt templates"');
 

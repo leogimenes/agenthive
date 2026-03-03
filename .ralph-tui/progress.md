@@ -164,3 +164,21 @@ after each iteration and it's included in prompts for context.
   - The `isProcessAlive` helper in lock.ts was made `export` for reuse by the watchdog module
   - `await new Promise(() => {})` is a clean pattern for keeping a CLI process alive indefinitely (for watch mode)
 ---
+
+## 2026-03-03 - agenthive-2h2.9
+- Implemented configuration profiles (US-009) — full YAML profile system replacing the old agent-list-only presets
+- Files changed: `src/profiles/embedded.ts` (new), `src/commands/init.ts` (profile loading), `src/commands/completion.ts` (updated preset names), `templates/profiles/` (new, 5 YAML files)
+- Features:
+  - 7 profiles: `fullstack`, `security-audit`, `refactor`, `solo`, `review`, `backend-only`, `minimal`
+  - Each profile is a complete YAML config template with agents, defaults (budget, poll, model), and hooks
+  - `hive init --preset <name>` now loads the full profile config, not just agent names
+  - `hive init --list-presets` shows all profiles with descriptions and agent lists
+  - Existing `fullstack`/`backend-only`/`minimal` presets migrated to the profile format
+  - Profiles are embedded as string constants in `src/profiles/embedded.ts` following the same pattern as hooks and templates
+  - Shell completions updated for bash, zsh, and fish with all 7 profile names and `--list-presets` flag
+  - `buildConfigFromProfile()` parses profile YAML and produces full `HiveConfig` with proper defaults, agents, hooks
+- **Learnings:**
+  - The embedding pattern (string constants in TS files) is consistent across hooks, templates, and now profiles — keeps distribution simple
+  - Profile-based init required a separate `buildConfigFromProfile()` path because the profile YAML provides all config sections, not just agent names
+  - The `installTemplates` function needed to use `config.agents[name].agent` for template resolution (not just `AVAILABLE_AGENTS`) to support profile-defined agents
+---

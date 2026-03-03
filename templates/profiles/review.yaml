@@ -1,0 +1,33 @@
+# AgentHive Profile: Code Review
+# Setup for thorough code review with security, QA, and backend agents.
+# Lower budgets per task (reviews are shorter), higher polling frequency.
+
+defaults:
+  poll: 90
+  budget: 1.50
+  daily_max: 15.00
+  model: sonnet
+  skip_permissions: true
+  notifications: true
+  notify_on:
+    - DONE
+    - BLOCKER
+    - WARN
+
+agents:
+  security:
+    description: "Security Engineer — vulnerability scanning"
+    agent: appsec
+  qa:
+    description: "Quality Analyst — test coverage and correctness"
+    agent: qa
+  backend:
+    description: "Backend Engineer — code quality and architecture review"
+    agent: backend
+    budget: 1.00
+
+hooks:
+  safety:
+    - destructive-guard
+  coordination:
+    - check-chat

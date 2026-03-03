@@ -3,10 +3,10 @@
   "sessionId": "603f043a-3618-44a3-ae8f-6b8ed6a30d94",
   "status": "running",
   "startedAt": "2026-03-03T13:55:54.410Z",
-  "updatedAt": "2026-03-03T14:24:45.782Z",
-  "currentIteration": 8,
+  "updatedAt": "2026-03-03T14:29:26.815Z",
+  "currentIteration": 9,
   "maxIterations": 2,
-  "tasksCompleted": 8,
+  "tasksCompleted": 9,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -59,8 +59,8 @@
       {
         "id": "agenthive-2h2.8",
         "title": "US-008: Agent health watchdog",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "agenthive-2h2.9",
@@ -156,12 +156,22 @@
       "durationMs": 234528,
       "startedAt": "2026-03-03T14:20:49.810Z",
       "endedAt": "2026-03-03T14:24:44.338Z"
+    },
+    {
+      "iteration": 9,
+      "status": "completed",
+      "taskId": "agenthive-2h2.8",
+      "taskTitle": "US-008: Agent health watchdog",
+      "taskCompleted": true,
+      "durationMs": 279660,
+      "startedAt": "2026-03-03T14:24:45.701Z",
+      "endedAt": "2026-03-03T14:29:25.361Z"
     }
   ],
   "skippedTaskIds": [],
   "cwd": "/home/leonardosg/repos/projects/agenthive",
   "activeTaskIds": [
-    "agenthive-2h2.8"
+    "agenthive-2h2.9"
   ],
   "subagentPanelVisible": false
 }

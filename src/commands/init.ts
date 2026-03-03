@@ -3,14 +3,15 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'n
 import { join, resolve, basename } from 'node:path';
 import { checkbox, confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
-import { stringify as toYaml } from 'yaml';
+import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import { createWorktree, isGitRepo, getMainBranch } from '../core/worktree.js';
 import { initChatFile } from '../core/chat.js';
 import { EMBEDDED_HOOKS } from '../hooks/embedded.js';
 import { EMBEDDED_TEMPLATES } from '../templates/embedded.js';
+import { EMBEDDED_PROFILES } from '../profiles/embedded.js';
 import type { HiveConfig, AgentConfig, DefaultsConfig } from '../types/config.js';
 
-// ── Presets ─────────────────────────────────────────────────────────
+// ── Agent definitions (for interactive & --agents modes) ────────────
 
 interface AgentPreset {
   description: string;
@@ -29,11 +30,8 @@ const AVAILABLE_AGENTS: Record<string, AgentPreset> = {
   pm: { description: 'Product Manager', agent: 'pm', poll: 120, budget: 1.0 },
 };
 
-const PRESETS: Record<string, string[]> = {
-  fullstack: ['sre', 'frontend', 'backend', 'qa', 'security'],
-  'backend-only': ['sre', 'backend', 'qa', 'security'],
-  minimal: ['backend', 'qa'],
-};
+// Default agent set for interactive --yes mode (fullstack profile agents)
+const DEFAULT_AGENTS = ['sre', 'frontend', 'backend', 'qa', 'security'];
 
 // ── Command registration ────────────────────────────────────────────
 
@@ -44,11 +42,17 @@ export function registerInitCommand(program: Command): void {
     .option('--agents <list>', 'Comma-separated agent names to create')
     .option(
       '--preset <name>',
-      `Use a predefined agent set (${Object.keys(PRESETS).join(', ')})`,
+      `Use a configuration profile (run --list-presets to see options)`,
     )
+    .option('--list-presets', 'Show available configuration profiles')
     .option('--yes', 'Skip interactive prompts, use defaults')
     .option('--templates [value]', 'Install agent prompt templates (default: auto, use "none" to skip)')
     .action(async (opts) => {
+      if (opts.listPresets) {
+        listPresets();
+        return;
+      }
+
       const cwd = program.opts().cwd
         ? resolve(program.opts().cwd)
         : process.cwd();
@@ -84,26 +88,33 @@ async function runInit(
     process.exit(1);
   }
 
-  // 3. Determine which agents to create
+  // 3. Determine config: either from a profile or by building from agent names
+  let config: HiveConfig;
   let selectedAgents: string[];
 
-  if (opts.agents) {
-    selectedAgents = opts.agents.split(',').map((a) => a.trim());
-    validateAgentNames(selectedAgents);
-  } else if (opts.preset) {
-    if (!PRESETS[opts.preset]) {
+  if (opts.preset) {
+    const profile = EMBEDDED_PROFILES[opts.preset];
+    if (!profile) {
       console.error(
         chalk.red(
-          `Unknown preset: ${opts.preset}. Available: ${Object.keys(PRESETS).join(', ')}`,
+          `Unknown preset: ${opts.preset}. Run \`hive init --list-presets\` to see available profiles.`,
         ),
       );
       process.exit(1);
     }
-    selectedAgents = PRESETS[opts.preset];
+    console.log(chalk.gray(`Using profile: ${chalk.bold(opts.preset)} — ${profile.description}`));
+    config = buildConfigFromProfile(cwd, profile.yaml);
+    selectedAgents = Object.keys(config.agents);
+  } else if (opts.agents) {
+    selectedAgents = opts.agents.split(',').map((a) => a.trim());
+    validateAgentNames(selectedAgents);
+    config = buildConfig(cwd, selectedAgents);
   } else if (opts.yes) {
-    selectedAgents = PRESETS.fullstack;
+    selectedAgents = DEFAULT_AGENTS;
+    config = buildConfig(cwd, selectedAgents);
   } else {
     selectedAgents = await promptAgentSelection();
+    config = buildConfig(cwd, selectedAgents);
   }
 
   if (selectedAgents.length === 0) {
@@ -126,7 +137,6 @@ async function runInit(
 
   // 6. Create config
   console.log(chalk.gray('Writing config.yaml...'));
-  const config = buildConfig(cwd, selectedAgents);
   writeFileSync(
     join(hivePath, 'config.yaml'),
     toYaml(config, { lineWidth: 0 }),
@@ -238,8 +248,8 @@ async function installTemplates(
   const skipped: string[] = [];
 
   for (const agentName of selectedAgents) {
-    const preset = AVAILABLE_AGENTS[agentName];
-    const templateName = preset?.agent ?? agentName;
+    const agentConfig = config.agents[agentName];
+    const templateName = agentConfig?.agent ?? AVAILABLE_AGENTS[agentName]?.agent ?? agentName;
     const template = EMBEDDED_TEMPLATES[templateName];
 
     if (!template) {
@@ -271,11 +281,25 @@ async function installTemplates(
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
+function listPresets(): void {
+  console.log(chalk.bold('\nAvailable configuration profiles:\n'));
+  for (const [name, profile] of Object.entries(EMBEDDED_PROFILES)) {
+    const parsed = parseYaml(profile.yaml) as { agents?: Record<string, unknown> };
+    const agentNames = parsed?.agents ? Object.keys(parsed.agents) : [];
+    console.log(`  ${chalk.cyan(name)}`);
+    console.log(`    ${profile.description}`);
+    console.log(`    Agents: ${chalk.gray(agentNames.join(', '))}`);
+    console.log('');
+  }
+  console.log(chalk.gray('Usage: hive init --preset <name>'));
+  console.log('');
+}
+
 async function promptAgentSelection(): Promise<string[]> {
   const choices = Object.entries(AVAILABLE_AGENTS).map(([name, preset]) => ({
     name: `${name} — ${preset.description}`,
     value: name,
-    checked: PRESETS.fullstack.includes(name),
+    checked: DEFAULT_AGENTS.includes(name),
   }));
 
   return checkbox({
@@ -335,6 +359,63 @@ function buildConfig(
     hooks: {
       safety: ['destructive-guard'],
       coordination: ['check-chat'],
+    },
+    templates: {},
+  };
+}
+
+function buildConfigFromProfile(
+  cwd: string,
+  profileYaml: string,
+): HiveConfig {
+  const parsed = parseYaml(profileYaml) as Record<string, unknown>;
+
+  // Extract defaults from profile, falling back to standard defaults
+  const rawDefaults = (parsed.defaults ?? {}) as Record<string, unknown>;
+  const defaults: DefaultsConfig = {
+    poll: typeof rawDefaults.poll === 'number' ? rawDefaults.poll : 60,
+    budget: typeof rawDefaults.budget === 'number' ? rawDefaults.budget : 2.0,
+    daily_max: typeof rawDefaults.daily_max === 'number' ? rawDefaults.daily_max : 20.0,
+    model: typeof rawDefaults.model === 'string' ? rawDefaults.model : 'sonnet',
+    skip_permissions: typeof rawDefaults.skip_permissions === 'boolean' ? rawDefaults.skip_permissions : true,
+    notifications: typeof rawDefaults.notifications === 'boolean' ? rawDefaults.notifications : false,
+    notify_on: Array.isArray(rawDefaults.notify_on) ? rawDefaults.notify_on as string[] : ['DONE', 'BLOCKER'],
+  };
+
+  // Extract agents from profile
+  const rawAgents = (parsed.agents ?? {}) as Record<string, Record<string, unknown>>;
+  const agents: Record<string, AgentConfig> = {};
+  const roleMap: Record<string, string> = {};
+
+  for (const [name, agentRaw] of Object.entries(rawAgents)) {
+    agents[name] = {
+      description: typeof agentRaw.description === 'string' ? agentRaw.description : name,
+      agent: typeof agentRaw.agent === 'string' ? agentRaw.agent : name,
+      ...(typeof agentRaw.poll === 'number' ? { poll: agentRaw.poll } : {}),
+      ...(typeof agentRaw.budget === 'number' ? { budget: agentRaw.budget } : {}),
+      ...(typeof agentRaw.daily_max === 'number' ? { daily_max: agentRaw.daily_max } : {}),
+      ...(typeof agentRaw.model === 'string' ? { model: agentRaw.model } : {}),
+    };
+    roleMap[name] = name.toUpperCase().replace(/-/g, '_');
+  }
+
+  // Extract hooks from profile
+  const rawHooks = (parsed.hooks ?? {}) as Record<string, unknown>;
+  const toStringArray = (val: unknown): string[] | undefined =>
+    Array.isArray(val) ? val.filter((v): v is string => typeof v === 'string') : undefined;
+
+  return {
+    session: basename(cwd),
+    defaults,
+    agents,
+    chat: {
+      file: 'chat.md',
+      role_map: roleMap,
+    },
+    hooks: {
+      safety: toStringArray(rawHooks.safety) ?? ['destructive-guard'],
+      coordination: toStringArray(rawHooks.coordination) ?? ['check-chat'],
+      custom: toStringArray(rawHooks.custom),
     },
     templates: {},
   };
