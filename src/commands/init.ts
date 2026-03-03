@@ -336,6 +336,7 @@ function buildConfig(
       safety: ['destructive-guard'],
       coordination: ['check-chat'],
     },
+    templates: {},
   };
 }
 

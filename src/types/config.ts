@@ -18,6 +18,9 @@ export interface HiveConfig {
 
   /** Hook configuration. */
   hooks: HooksConfig;
+
+  /** Templates configuration. */
+  templates: TemplatesConfig;
 }
 
 export interface DefaultsConfig {
@@ -96,6 +99,12 @@ export interface HooksConfig {
   /** User-defined custom hooks. */
   custom?: string[];
 }
+
+export interface TemplatesConfig {
+  /** Override the project-local template directory path (relative to hive root). */
+  dir?: string;
+}
+
 
 /** Message types in the chat protocol. */
 export type MessageType =

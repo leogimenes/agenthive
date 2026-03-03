@@ -8,6 +8,7 @@ import type {
   ResolvedAgentConfig,
   ChatConfig,
   HooksConfig,
+  TemplatesConfig,
 } from '../types/config.js';
 
 // ── Errors ──────────────────────────────────────────────────────────
@@ -181,7 +182,14 @@ function validateAndNormalize(
     custom: toStringArray(rawHooks.custom),
   };
 
-  return { session, defaults, agents, chat, hooks };
+  // Templates
+  const rawTemplates = (raw.templates ?? {}) as Record<string, unknown>;
+  const templates: TemplatesConfig = {
+    dir:
+      typeof rawTemplates.dir === 'string' ? rawTemplates.dir : undefined,
+  };
+
+  return { session, defaults, agents, chat, hooks, templates };
 }
 
 // ── Resolution ──────────────────────────────────────────────────────

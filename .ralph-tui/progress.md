@@ -9,6 +9,7 @@ after each iteration and it's included in prompts for context.
 - **Agent presets**: `src/commands/init.ts` defines `AVAILABLE_AGENTS` with 7 presets (sre, frontend, backend, qa, security→appsec, devops, pm). The `agent` field maps to `.claude/agents/<agent>.md`.
 - **Env vars for agents**: `polling.ts:300-302` sets `HIVE_CHAT_FILE`, `HIVE_AGENT_NAME`, `HIVE_AGENT_ROLE` in the spawned claude process environment.
 - **Chat message format**: `[ROLE] TYPE <ISO8601_TIMESTAMP>: message` — defined in `buildPrompt()` at `polling.ts:323-338`.
+- **Template resolution order**: Templates are discovered from three sources (bundled → global → local), with later sources overriding earlier ones by name. Resolution is implemented in `discoverTemplates()` in `src/commands/templates.ts`.
 
 ---
 
@@ -68,5 +69,23 @@ after each iteration and it's included in prompts for context.
   - `diff -u` exits with code 1 when files differ — use `|| true` to prevent `execSync` from throwing
   - `resolveHiveRoot` throws when no `.hive/` directory exists; the templates command gracefully falls back to `cwd` since it doesn't require an initialized hive (templates can be installed before `hive init`)
   - Quality checks: typecheck, 113 tests (5 suites), build all pass
+---
+
+## 2026-03-03 - agenthive-9b5.5
+- Implemented user-defined template directories with three-tier resolution: bundled → global (`~/.config/agenthive/templates/`) → project-local (`.hive/templates/`)
+- Added `TemplatesConfig` to `types/config.ts` with `dir?` field; updated `core/config.ts` to parse `templates` section
+- Refactored `src/commands/templates.ts`:
+  - Added `discoverTemplates()` function with `ResolvedTemplate` type (name, content, source)
+  - `hive templates list` now shows a SOURCE column (bundled/global/local) with color coding
+  - `hive templates show`, `install`, and `diff` all resolve from the multi-directory chain
+  - `getTemplateStatus()` compares against the resolved source, not just bundled
+- Added `templates.dir` config option in `.hive/config.yaml` to override the project-local template path
+- Created `tests/core/templates.test.ts` with 9 tests covering discovery, override behavior, .md-only filtering, config override, and directory resolution
+- Files changed: `src/types/config.ts`, `src/core/config.ts`, `src/commands/templates.ts`, `src/commands/init.ts`, `tests/core/templates.test.ts` (new)
+- **Learnings:**
+  - Adding a new field to `HiveConfig` requires updating both `types/config.ts` AND any place that constructs a `HiveConfig` manually (e.g., `init.ts:327` builds one for the config file scaffold)
+  - `readdirSync` returns filenames only (not full paths) — need to `join(dir, entry)` to read contents
+  - The `loadConfig()` call in `localTemplatesDir()` needs a try/catch because the function may be called before `hive init` creates the config file
+  - Quality checks: typecheck, 122 tests (6 suites), build all pass
 ---
 
