@@ -5,7 +5,9 @@ after each iteration and it's included in prompts for context.
 
 ## Codebase Patterns (Study These First)
 
-*Add reusable patterns discovered during development here.*
+- **Command registration pattern**: Each command has a `registerXxxCommand(program)` export in `src/commands/xxx.ts`, imported and called in `src/index.ts`
+- **CWD resolution**: All commands resolve `cwd` from `program.opts().cwd` or `process.cwd()`, then pass to `resolveHiveRoot(cwd)` + `loadConfig(cwd)`
+- **ESM module**: Project uses ESM (`import`/`export`), never `require()`. All local imports use `.js` extensions.
 
 ---
 
@@ -16,4 +18,22 @@ after each iteration and it's included in prompts for context.
 - **Learnings:**
   - `init.ts:81` was already fixed in a prior iteration (references `git worktree add` correctly)
   - The `hive add` command does not exist yet (planned as US-010); when it's implemented, both `init.ts` and `worktree.ts` should be updated to reference it
+---
+
+## 2026-03-03 - agenthive-2h2.2
+- Implemented `hive merge [agents...]` command for orchestrated rebase and push
+- Files changed: `src/commands/merge.ts` (new), `src/index.ts` (registration)
+- Features:
+  - No args: merges all agents with commits ahead of main, in alphabetical order
+  - With args: merges only specified agents in the order given
+  - Pre-merge checks: worktree clean, counts commits ahead, skips agents with no new commits
+  - Per-agent: fetch → rebase onto main → push to main (fast-forward)
+  - On conflict: stops, prints conflict files, saves state for `--continue`
+  - `--dry-run` shows what would be merged without doing it
+  - `--continue` resumes after manually resolved conflict
+  - Summary printed at the end with per-agent results
+- **Learnings:**
+  - Worktrees use a `.git` file (not directory) pointing to main repo's git dir; rebase state dirs must be checked via `git rev-parse --git-dir`
+  - `getMainBranch()` in `src/core/worktree.ts` checks origin/main, origin/master, then local main/master
+  - Merge state is persisted in `.hive/state/merge-state.json` for `--continue` flow
 ---

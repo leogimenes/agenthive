@@ -14,6 +14,7 @@ import { registerConfigCommand } from './commands/config.js';
 import { registerUiCommand } from './commands/ui.js';
 import { registerPlanCommand } from './commands/plan.js';
 import { registerTemplatesCommand } from './commands/templates.js';
+import { registerMergeCommand } from './commands/merge.js';
 
 // Read version from package.json at dev/install time, fall back for
 // standalone binaries where the filesystem layout doesn't exist.
@@ -51,5 +52,6 @@ registerConfigCommand(program);
 registerUiCommand(program);
 registerPlanCommand(program);
 registerTemplatesCommand(program);
+registerMergeCommand(program);
 
 program.parse();

@@ -1,0 +1,53 @@
+# Iteration 1 Log
+
+## Metadata
+
+- **Task ID**: agenthive-2h2.1
+- **Task Title**: US-001: Fix stale `hive add` reference in worktree.ts
+- **Description**: From: `prd-bug-fixes.md` US-004 (partial)
+- **Status**: completed
+- **Task Completed**: Yes
+- **Promise Detected**: Yes
+- **Started At**: 2026-03-03T13:56:21.103Z
+- **Ended At**: 2026-03-03T13:57:06.108Z
+- **Duration**: 45s
+- **Input Tokens**: 34
+- **Output Tokens**: 1590
+- **Total Tokens**: 1624
+- **Agent**: claude
+- **Model**: claude-opus-4-6
+- **Epic**: agenthive-2h2
+- **Sandbox Mode**: auto
+- **Sandbox Network**: Enabled
+--- RAW OUTPUT ---
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/worktree.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m
+I can see the two locations that need fixing:
+
+1. **`src/core/worktree.ts:25`** — references `hive add --force` (doesn't exist)
+2. **`src/commands/init.ts:81`** — already fixed, references `git worktree add` appropriately
+
+Let me fix the worktree.ts error message.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/worktree.ts[0m edit: "      `Worktree already exists at ${worktreePath}...." → "      `Worktree already exists at ${worktreePath}...."
+Now let me run the quality checks.
+[94m[Bash][0m Run TypeScript type checking $ npm run typecheck 2>&1
+[94m[Bash][0m Run vitest tests $ npm test 2>&1
+All checks pass. Now let me also verify the build works.
+[94m[Bash][0m Build TypeScript compilation $ npm run build 2>&1
+All quality gates pass. Now let me close the bead and document learnings.
+[94m[Bash][0m Close the bead $ bd close agenthive-2h2.1 --db /home/leonardosg/repos/projects/agenthive/.beads/beads.db --reason "Fi...
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "---
+
+" → "---
+
+## 2026-03-03 - agenthive-2h2.1
+- Fixed stale..."
+Done. The fix was straightforward:
+
+- **`src/core/worktree.ts:25`**: Changed the error message from referencing the nonexistent `hive add --force` to telling the user to run `git worktree remove <path>` and retry, or delete the directory manually.
+- `init.ts:81` was already correct from a prior iteration.
+- All quality gates pass (typecheck, 122 tests, build).
+
+<promise>COMPLETE</promise>
