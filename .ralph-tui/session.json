@@ -3,10 +3,10 @@
   "sessionId": "603f043a-3618-44a3-ae8f-6b8ed6a30d94",
   "status": "running",
   "startedAt": "2026-03-03T13:55:54.410Z",
-  "updatedAt": "2026-03-03T14:20:49.894Z",
-  "currentIteration": 7,
+  "updatedAt": "2026-03-03T14:24:45.782Z",
+  "currentIteration": 8,
   "maxIterations": 2,
-  "tasksCompleted": 7,
+  "tasksCompleted": 8,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -53,8 +53,8 @@
       {
         "id": "agenthive-2h2.7",
         "title": "US-007: Session recovery after crash",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "agenthive-2h2.8",
@@ -146,12 +146,22 @@
       "durationMs": 271881,
       "startedAt": "2026-03-03T14:16:16.564Z",
       "endedAt": "2026-03-03T14:20:48.445Z"
+    },
+    {
+      "iteration": 8,
+      "status": "completed",
+      "taskId": "agenthive-2h2.7",
+      "taskTitle": "US-007: Session recovery after crash",
+      "taskCompleted": true,
+      "durationMs": 234528,
+      "startedAt": "2026-03-03T14:20:49.810Z",
+      "endedAt": "2026-03-03T14:24:44.338Z"
     }
   ],
   "skippedTaskIds": [],
   "cwd": "/home/leonardosg/repos/projects/agenthive",
   "activeTaskIds": [
-    "agenthive-2h2.7"
+    "agenthive-2h2.8"
   ],
   "subagentPanelVisible": false
 }

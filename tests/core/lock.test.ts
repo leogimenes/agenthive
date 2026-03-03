@@ -102,11 +102,10 @@ describe('lock', () => {
     it('should return running when current process holds lock', () => {
       acquireLock(hivePath, 'sre');
       const status = getLockStatus(hivePath, 'sre');
-      expect(status).toEqual({
-        locked: true,
-        pid: process.pid,
-        stale: false,
-      });
+      expect(status.locked).toBe(true);
+      expect(status.pid).toBe(process.pid);
+      expect(status.stale).toBe(false);
+      expect(status.heartbeat).toBeDefined();
     });
 
     it('should detect stale locks', () => {

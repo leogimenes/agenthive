@@ -1,0 +1,123 @@
+# Iteration 8 Log
+
+## Metadata
+
+- **Task ID**: agenthive-2h2.7
+- **Task Title**: US-007: Session recovery after crash
+- **Description**: From: `prd-features.md` US-008
+- **Status**: completed
+- **Task Completed**: Yes
+- **Promise Detected**: Yes
+- **Started At**: 2026-03-03T14:20:49.810Z
+- **Ended At**: 2026-03-03T14:24:44.338Z
+- **Duration**: 3m 54s
+- **Input Tokens**: 132
+- **Output Tokens**: 10467
+- **Total Tokens**: 10599
+- **Agent**: claude
+- **Model**: claude-opus-4-6
+- **Epic**: agenthive-2h2
+- **Sandbox Mode**: auto
+- **Sandbox Network**: Enabled
+--- RAW OUTPUT ---
+[94m[TodoWrite][0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Agent][0m Explore codebase structure
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/index.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/kill.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/status.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/types/config.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/lock.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/worktree.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/config.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/tmux.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/dispatch.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/lock.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/launch.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/kill.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/index.ts[0m
+Now let me also look at the tmux module and the status command for additional context.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/tmux.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/status.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m
+[94m[TodoWrite][0m
+Now I have a thorough understanding of the codebase. Let me implement the `hive resume` command. I need to check for tmux window existence within a session, so let me first check what tmux utilities are available.
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/resume.ts[0m "import { Command } from 'commander';
+import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
+import chalk from 'chalk';
+import { loadConfig, resolveHiveRoot, resolveHiv... (8168 chars)"
+Now register the command in `index.ts` and update completions.
+[94m[TodoWrite][0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/index.ts[0m edit: "import { registerCostCommand } from './commands/co..." → "import { registerCostCommand } from './commands/co..."
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/index.ts[0m edit: "registerCostCommand(program);
+
+program.parse();" → "registerCostCommand(program);
+registerResumeComman..."
+Now update the shell completions to include the `resume` command.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m edit: "const COMMANDS = [
+  'init', 'launch', 'kill', 'st..." → "const COMMANDS = [
+  'init', 'launch', 'kill', 'st..."
+Now add `resume` to the bash completion case block:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m edit: "    cost)
+      COMPREPLY=( $(compgen -W "--agent ..." → "    cost)
+      COMPREPLY=( $(compgen -W "--agent ..."
+Now add `resume` to the zsh completions:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m edit: "    'cost:Show per-agent and aggregate cost summar..." → "    'cost:Show per-agent and aggregate cost summar..."
+Now add the zsh case for `resume`:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m edit: "    cost)
+      local -a agents
+      agents=(\${(..." → "    cost)
+      local -a agents
+      agents=(\${(..."
+Now update the fish completions. I need to add `resume` to the command list and its options:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m edit: "    'for c in init launch kill status dispatch tai..." → "    'for c in init launch kill status dispatch tai..."
+
+[91m[Error: <tool_use_error>String to replace not found in file.
+String:     'for c in init launch kill status dispatch tail config ui plan templates merge completion add remove logs cost',</tool_use_error>][0m
+[94m[Grep][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m pattern: [96mfor c in init[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m edit: "    '  for c in init launch kill status dispatch t..." → "    '  for c in init launch kill status dispatch t..."
+Now add `resume` to the fish command descriptions and its options:
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m edit: "    cost: 'Show per-agent and aggregate cost summa..." → "    cost: 'Show per-agent and aggregate cost summa..."
+Now add fish completion options for `resume`. Let me find the right place:
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m edit: "  lines.push('complete -c hive -n "__hive_using_su..." → "  lines.push('complete -c hive -n "__hive_using_su..."
+Now let me run the quality checks:
+[94m[TodoWrite][0m
+[94m[Bash][0m Run TypeScript type checking $ npm run typecheck 2>&1
+[94m[Bash][0m Run vitest tests $ npm test 2>&1
+[94m[Bash][0m Build TypeScript project $ npm run build 2>&1
+All quality checks pass. Now let me close the bead and document learnings.
+[94m[TodoWrite][0m
+[94m[Bash][0m Close the bead $ bd close agenthive-2h2.7 --db /home/leonardosg/repos/projects/agenthive/.beads/beads.db --reason "Im...
+Now document learnings in progress.md:
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "  - The existing `recordSpending` tracks daily tot..." → "  - The existing `recordSpending` tracks daily tot..."
+[94m[TodoWrite][0m
+## Summary
+
+Implemented `hive resume` — a session recovery command for AgentHive (US-007).
+
+### What was built
+
+**`src/commands/resume.ts`** — New command that:
+- Detects each agent's state by checking lock files (PID alive/dead/missing) and tmux windows
+- Categorizes agents as `running`, `stale` (orphaned lock), or `stopped`
+- Displays a color-coded recovery plan showing what action will be taken for each agent
+- Cleans stale locks and orphaned tmux windows before relaunching
+- Reuses the existing tmux session — adds windows rather than creating a new one
+- Supports `--yes` (skip prompt), `--force` (restart running agents), `--dry-run` (plan only)
+
+**Also updated:**
+- `src/index.ts` — registered `registerResumeCommand`
+- `src/commands/completion.ts` — added bash, zsh, and fish completions for `resume`
+
+### Quality gates
+- `npm run typecheck` — passed
+- `npm test` — 154 tests passed (7 suites)
+- `npm run build` — compiled successfully
+
+<promise>COMPLETE</promise>

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
-import { acquireLock, releaseLock, getCheckpoint, setCheckpoint } from './lock.js';
+import { acquireLock, releaseLock, getCheckpoint, setCheckpoint, updateHeartbeat } from './lock.js';
 import { checkDailyBudget, recordSpending, logTaskCost } from './budget.js';
 import { findRequests, appendMessage, getChatLineCount, resolveChatPath, readMessagesSince } from './chat.js';
 import { syncWorktree, rebaseAndPush } from './worktree.js';
@@ -95,6 +95,9 @@ export class AgentLoop {
   // ── Main cycle ──────────────────────────────────────────────────
 
   private async cycle(): Promise<void> {
+    // 0a. Update heartbeat in lock file
+    updateHeartbeat(this.hivePath, this.agent.name);
+
     // 0. Check daily budget
     const { allowed, spent } = checkDailyBudget(
       this.hivePath,

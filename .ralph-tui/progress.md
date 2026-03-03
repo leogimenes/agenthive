@@ -147,3 +147,20 @@ after each iteration and it's included in prompts for context.
   - The `readline` module's `createInterface` + `rl.question()` works well for simple y/N confirmation prompts in CLI commands
   - The `buildLoopCommand` helper from `launch.ts` was duplicated rather than shared — both detect tsx vs production mode and build the appropriate command string
 ---
+
+## 2026-03-03 - agenthive-2h2.8
+- Implemented agent health watchdog (US-008) with heartbeat-based health monitoring
+- Files changed: `src/core/lock.ts` (heartbeat format + updateHeartbeat), `src/core/watchdog.ts` (new), `src/core/polling.ts` (heartbeat at cycle start), `src/commands/status.ts` (health indicators + --watch mode), `src/commands/completion.ts` (--watch/--interval completions), `tests/core/lock.test.ts` (updated for new format), `tests/core/watchdog.test.ts` (new, 12 tests)
+- Features:
+  - Lock file format extended to `<PID>\n<ISO timestamp>` — backward compatible with old PID-only format
+  - `updateHeartbeat()` called at start of every polling cycle
+  - `checkAgentHealth()` returns: `healthy`, `unresponsive` (heartbeat > poll*3), `stuck` (checkpoint not advancing), `dead` (PID gone, lock stale), `stopped` (no lock)
+  - `hive status` shows health indicator alongside status: `RUNNING (healthy)` vs `RUNNING (unresponsive?)`
+  - `hive status --watch [--interval N]` runs continuous health monitoring with desktop notifications on state changes
+  - Shell completions updated for bash, zsh, and fish
+- **Learnings:**
+  - Extending lock file format required updating existing tests that used `toEqual` with exact object shape — `getLockStatus` now returns an additional `heartbeat` field
+  - Backward compatibility with old lock format (PID-only, no newline) was important since existing locks may still be in this format
+  - The `isProcessAlive` helper in lock.ts was made `export` for reuse by the watchdog module
+  - `await new Promise(() => {})` is a clean pattern for keeping a CLI process alive indefinitely (for watch mode)
+---

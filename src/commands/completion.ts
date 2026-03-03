@@ -115,7 +115,7 @@ _hive_completions() {
       COMPREPLY=( $(compgen -W "--help" -- "$cur") )
       ;;
     status)
-      COMPREPLY=( $(compgen -W "--json --help" -- "$cur") )
+      COMPREPLY=( $(compgen -W "--json --watch --interval --help" -- "$cur") )
       ;;
     dispatch)
       COMPREPLY=( $(compgen -W "--from --type --help" -- "$cur") )
@@ -272,7 +272,10 @@ _hive() {
         '--templates[Install agent prompt templates]:value:'
       ;;
     status)
-      _arguments '--json[Output as JSON]'
+      _arguments \
+        '--json[Output as JSON]' \
+        '--watch[Continuously monitor agent health]' \
+        '--interval[Watch interval in seconds]:seconds:'
       ;;
     config)
       _arguments \\
@@ -436,6 +439,8 @@ function fishCompletion(): string {
   lines.push('');
   lines.push('# status options');
   lines.push('complete -c hive -n "__hive_using_subcommand status" -l json -d "Output as JSON"');
+  lines.push('complete -c hive -n "__hive_using_subcommand status" -l watch -d "Continuously monitor agent health"');
+  lines.push('complete -c hive -n "__hive_using_subcommand status" -l interval -d "Watch interval in seconds" -r');
 
   lines.push('');
   lines.push('# dispatch — agent names + options');
