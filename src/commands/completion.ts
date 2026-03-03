@@ -4,11 +4,11 @@ import { Command } from 'commander';
 const COMMANDS = [
   'init', 'launch', 'kill', 'status', 'dispatch', 'tail',
   'config', 'ui', 'plan', 'templates', 'merge', 'completion',
-  'add', 'remove',
+  'add', 'remove', 'logs',
 ];
 
 // ── Commands that accept agent names as arguments ───────────────────
-const AGENT_COMMANDS = ['launch', 'kill', 'dispatch', 'tail', 'merge'];
+const AGENT_COMMANDS = ['launch', 'kill', 'dispatch', 'tail', 'merge', 'logs'];
 
 // ── Global flags ────────────────────────────────────────────────────
 const GLOBAL_FLAGS = ['--cwd', '--version', '--help'];
@@ -146,6 +146,11 @@ _hive_completions() {
       agents=$(_hive_agents)
       COMPREPLY=( $(compgen -W "$agents --force --delete-branch --help" -- "$cur") )
       ;;
+    logs)
+      local agents
+      agents=$(_hive_agents)
+      COMPREPLY=( $(compgen -W "$agents -n --last -l --list -s --session -f --follow --json --help" -- "$cur") )
+      ;;
   esac
 }
 
@@ -177,6 +182,7 @@ _hive() {
     'completion:Output shell completion script'
     'add:Add a new agent to the hive'
     'remove:Remove an agent from the hive'
+    'logs:Show Claude Code transcript events'
   )
 
   global_flags=(
@@ -194,7 +200,7 @@ _hive() {
   local cmd=\${words[2]}
 
   case "$cmd" in
-    launch|kill|dispatch|tail|merge)
+    launch|kill|dispatch|tail|merge|logs)
       local -a agents
       agents=(\${(f)"$(_hive_agents)"})
       case "$cmd" in
@@ -234,6 +240,19 @@ _hive() {
             '--dry-run[Show what would be merged]' \\
             '--continue[Resume after resolved conflict]' \\
             '*:agent:compadd -a agents'
+          ;;
+        logs)
+          _arguments \\
+            '-n[Show last N events]:count:' \\
+            '--last[Show last N events]:count:' \\
+            '-l[List all sessions]' \\
+            '--list[List all sessions]' \\
+            '-s[Show specific session]:session_id:' \\
+            '--session[Show specific session]:session_id:' \\
+            '-f[Live-tail transcripts]' \\
+            '--follow[Live-tail transcripts]' \\
+            '--json[Output as JSON]' \\
+            '1:agent:compadd -a agents'
           ;;
       esac
       ;;
@@ -326,7 +345,7 @@ function fishCompletion(): string {
     '# Detect if a subcommand has been given',
     'function __hive_no_subcommand',
     '  set -l cmd (commandline -opc)',
-    '  for c in init launch kill status dispatch tail config ui plan templates merge completion add remove',
+    '  for c in init launch kill status dispatch tail config ui plan templates merge completion add remove logs',
     '    if contains -- $c $cmd',
     '      return 1',
     '    end',
@@ -363,6 +382,7 @@ function fishCompletion(): string {
     completion: 'Output shell completion script',
     add: 'Add a new agent to the hive',
     remove: 'Remove an agent from the hive',
+    logs: 'Show Claude Code transcript events',
   };
 
   for (const [cmd, desc] of Object.entries(commandDescs)) {
@@ -450,6 +470,15 @@ function fishCompletion(): string {
   lines.push('complete -c hive -n "__hive_using_subcommand remove" -a "(__hive_agents)" -d "Agent name"');
   lines.push('complete -c hive -n "__hive_using_subcommand remove" -l force -d "Remove even if running"');
   lines.push('complete -c hive -n "__hive_using_subcommand remove" -l delete-branch -d "Delete the git branch"');
+
+  lines.push('');
+  lines.push('# logs — agent names + options');
+  lines.push('complete -c hive -n "__hive_using_subcommand logs" -a "(__hive_agents)" -d "Agent name"');
+  lines.push('complete -c hive -n "__hive_using_subcommand logs" -s n -l last -d "Show last N events"');
+  lines.push('complete -c hive -n "__hive_using_subcommand logs" -s l -l list -d "List all sessions"');
+  lines.push('complete -c hive -n "__hive_using_subcommand logs" -s s -l session -d "Show specific session"');
+  lines.push('complete -c hive -n "__hive_using_subcommand logs" -s f -l follow -d "Live-tail transcripts"');
+  lines.push('complete -c hive -n "__hive_using_subcommand logs" -l json -d "Output as JSON"');
 
   lines.push('');
 

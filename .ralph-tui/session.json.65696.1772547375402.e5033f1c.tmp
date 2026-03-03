@@ -3,10 +3,10 @@
   "sessionId": "603f043a-3618-44a3-ae8f-6b8ed6a30d94",
   "status": "running",
   "startedAt": "2026-03-03T13:55:54.410Z",
-  "updatedAt": "2026-03-03T14:09:39.309Z",
-  "currentIteration": 4,
+  "updatedAt": "2026-03-03T14:16:15.402Z",
+  "currentIteration": 5,
   "maxIterations": 2,
-  "tasksCompleted": 4,
+  "tasksCompleted": 5,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -35,8 +35,8 @@
       {
         "id": "agenthive-2h2.4",
         "title": "US-004: Installation script",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "agenthive-2h2.5",
@@ -116,6 +116,16 @@
       "durationMs": 230273,
       "startedAt": "2026-03-03T14:03:23.792Z",
       "endedAt": "2026-03-03T14:07:14.065Z"
+    },
+    {
+      "iteration": 5,
+      "status": "completed",
+      "taskId": "agenthive-2h2.4",
+      "taskTitle": "US-004: Installation script",
+      "taskCompleted": true,
+      "durationMs": 143651,
+      "startedAt": "2026-03-03T14:07:15.445Z",
+      "endedAt": "2026-03-03T14:09:39.096Z"
     }
   ],
   "skippedTaskIds": [],

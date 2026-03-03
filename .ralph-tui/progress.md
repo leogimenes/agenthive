@@ -89,3 +89,24 @@ after each iteration and it's included in prompts for context.
   - GitHub API releases/latest endpoint returns JSON; parsing tag_name with grep+sed avoids jq dependency
   - `mktemp -d` is widely available on both Linux and macOS for temp directory creation
 ---
+
+## 2026-03-03 - agenthive-2h2.5
+- Implemented `hive logs [agent]` command — Claude Code transcript viewer
+- Files changed: `src/core/transcripts.ts` (new), `src/commands/logs.ts` (new), `src/index.ts` (registration), `src/commands/completion.ts` (logs completions), `tests/core/transcripts.test.ts` (new, 25 tests)
+- Features:
+  - `findTranscriptDir(worktreePath)` scans `~/.claude/projects/` for matching directories by encoding path
+  - `listSessions(dir)` returns session metadata sorted by start time (newest first) with duration and event count
+  - `parseTranscript(path)` extracts tool_use, text, and thinking events from JSONL
+  - `hive logs [agent]` shows recent transcript events with tool icons: `$` Bash, `r` Read, `w` Write, `e` Edit, `/` Grep, `*` Glob, `>>` Agent
+  - `hive logs --list` lists all sessions per agent with start time, duration, and event count
+  - `hive logs --session <id>` shows a specific session's full transcript (supports prefix matching)
+  - `hive logs --follow` live-tails the active transcript file using `chokidar`
+  - `hive logs --json` outputs machine-readable data for all modes
+  - Events are color-coded by agent using the same palette as `hive tail`
+  - Shell completions added for bash, zsh, and fish
+- **Learnings:**
+  - Claude Code JSONL transcripts use `type: "user"|"assistant"|"queue-operation"` at the top level; actual API content is in `message.content` (array of content blocks)
+  - Claude Code encodes project paths for `~/.claude/projects/` dirs by replacing `/` with `-` (e.g., `/home/user/project` → `-home-user-project`)
+  - Tool use blocks have `{type: "tool_use", name: "ToolName", input: {...}}` — tool results come back in `user` entries as `{type: "tool_result"}`
+  - The `chokidar` package (already a dependency) works well for live-tailing JSONL files by tracking event count offsets
+---

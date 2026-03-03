@@ -17,6 +17,7 @@ import { registerTemplatesCommand } from './commands/templates.js';
 import { registerMergeCommand } from './commands/merge.js';
 import { registerCompletionCommand } from './commands/completion.js';
 import { registerAddCommand, registerRemoveCommand } from './commands/agent.js';
+import { registerLogsCommand } from './commands/logs.js';
 
 // Read version from package.json at dev/install time, fall back for
 // standalone binaries where the filesystem layout doesn't exist.
@@ -58,5 +59,6 @@ registerMergeCommand(program);
 registerCompletionCommand(program);
 registerAddCommand(program);
 registerRemoveCommand(program);
+registerLogsCommand(program);
 
 program.parse();

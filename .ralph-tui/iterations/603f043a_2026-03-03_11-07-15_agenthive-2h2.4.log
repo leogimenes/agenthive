@@ -1,0 +1,88 @@
+# Iteration 5 Log
+
+## Metadata
+
+- **Task ID**: agenthive-2h2.4
+- **Task Title**: US-004: Installation script
+- **Description**: From: `prd-features.md` US-005
+- **Status**: completed
+- **Task Completed**: Yes
+- **Promise Detected**: Yes
+- **Started At**: 2026-03-03T14:07:15.445Z
+- **Ended At**: 2026-03-03T14:09:39.096Z
+- **Duration**: 2m 23s
+- **Input Tokens**: 71
+- **Output Tokens**: 7459
+- **Total Tokens**: 7530
+- **Agent**: claude
+- **Model**: claude-opus-4-6
+- **Epic**: agenthive-2h2
+- **Sandbox Mode**: auto
+- **Sandbox Network**: Enabled
+--- RAW OUTPUT ---
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/package.json[0m
+[94m[Bash][0m List scripts directory $ ls /home/leonardosg/repos/projects/agenthive/scripts/
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/scripts/build-binary.sh[0m
+[94m[Bash][0m Check if install.sh or release workflows exist $ ls /home/leonardosg/repos/projects/agenthive/.github/workflows/ 2>/dev/null
+
+[91m[Error: Exit code 2
+---
+
+---][0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/scripts/build-binary.ts[0m
+[94m[Bash][0m Check git remote for repo URL $ git remote -v 2>/dev/null | head -5
+No remote configured. I'll use a placeholder GitHub owner/repo. Let me check the existing codebase for any references to a GitHub repo or owner.
+[94m[Grep][0m [95m/home/leonardosg/repos/projects/agenthive[0m pattern: [96mgithub\.com[0m
+I see `agenthive/agenthive` used in the template config. Let me now create the installation script.
+[94m[TodoWrite][0m
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/scripts/install.sh[0m "#!/bin/sh
+# ── AgentHive — Installation Script ──────────────────────────────────
+#
+# Downloads and installs the AgentHive standalone binary from GitHub
+# Releases. Detects OS and architecture automat... (7122 chars)"
+[94m[Bash][0m Make install.sh executable $ chmod +x /home/leonardosg/repos/projects/agenthive/scripts/install.sh
+Now let me verify the script is valid shell (POSIX compliant) and test the basic argument parsing:
+[94m[Bash][0m Check shell script syntax $ sh -n scripts/install.sh && echo "Syntax OK"
+[94m[Bash][0m Test --help output $ sh scripts/install.sh --help
+[94m[Bash][0m Test --uninstall flow $ sh scripts/install.sh --uninstall --yes
+Good. Now let me also verify the completion script references the installation script, as the acceptance criteria mentions "Completions are included in the installation script (US-004) setup flow."
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/completion.ts[0m
+The completion script is already comprehensive. The acceptance criteria says "Completions are included in the installation script (US-004) setup flow" — this means the install script should optionally set up shell completions. Let me add that to the install script.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/scripts/install.sh[0m
+Now let me add shell completion setup instructions at the end of the install flow:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/scripts/install.sh[0m edit: "  # Check PATH
+  case ":${PATH}:" in
+    *":${INST..." → "  # Check PATH
+  case ":${PATH}:" in
+    *":${INST..."
+Now let me verify the script is still valid:
+[94m[Bash][0m Verify shell script syntax $ sh -n /home/leonardosg/repos/projects/agenthive/scripts/install.sh && echo "Syntax OK"
+Now let me run the quality checks:
+[94m[TodoWrite][0m
+[94m[Bash][0m Run TypeScript type checking $ npm run typecheck 2>&1
+[94m[Bash][0m Run vitest tests $ npm test 2>&1
+[94m[Bash][0m Build TypeScript $ npm run build 2>&1
+All checks pass. Now let me close the bead and document learnings:
+[94m[TodoWrite][0m
+[94m[Bash][0m Close the bead $ bd close agenthive-2h2.4 --db /home/leonardosg/repos/projects/agenthive/.beads/beads.db --reason "Cr...
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "  - Commander's `parseFloat` can be passed directl..." → "  - Commander's `parseFloat` can be passed directl..."
+[94m[TodoWrite][0m
+All acceptance criteria met:
+
+- `scripts/install.sh` is a POSIX-compatible shell script (`#!/bin/sh`, no bashisms)
+- Detects OS (Linux, macOS) and architecture (x64, arm64) via `uname`
+- Downloads pre-built binary from GitHub Releases for the detected platform
+- Verifies SHA256 checksum (supports both `sha256sum` and `shasum`)
+- Installs to `~/.local/bin/hive` by default, `/usr/local/bin/hive` with `--global`
+- Warns and prints PATH instructions if install dir is not in PATH
+- `--version <tag>` installs a specific release
+- `--uninstall` removes the binary
+- Falls back to `wget` if `curl` is not available
+- Existing installation prompts for overwrite confirmation
+- Shell completion setup instructions included in the install flow
+
+Quality gates: typecheck, 122 tests, and build all pass.
+
+<promise>COMPLETE</promise>
