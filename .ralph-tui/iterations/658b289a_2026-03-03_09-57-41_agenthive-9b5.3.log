@@ -1,0 +1,106 @@
+# Iteration 3 Log
+
+## Metadata
+
+- **Task ID**: agenthive-9b5.3
+- **Task Title**: US-003: Install templates during hive init
+- **Description**: As a developer initializing a new AgentHive project I want `hive init` to optionally scaffold agent prompt files So that I can start agents immediately without manually creating `.claude/agents/*.md` ...
+- **Status**: completed
+- **Task Completed**: Yes
+- **Promise Detected**: Yes
+- **Started At**: 2026-03-03T12:57:41.657Z
+- **Ended At**: 2026-03-03T13:01:35.029Z
+- **Duration**: 3m 53s
+- **Input Tokens**: 82
+- **Output Tokens**: 13576
+- **Total Tokens**: 13658
+- **Agent**: claude
+- **Model**: claude-opus-4-6
+- **Epic**: agenthive-9b5
+- **Sandbox Mode**: auto
+- **Sandbox Network**: Enabled
+--- RAW OUTPUT ---
+[94m[TodoWrite][0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/hooks/embedded.ts[0m
+[94m[TodoWrite][0m
+[94m[Glob][0m pattern: [96mtemplates/agents/*.md[0m
+[94m[Grep][0m pattern: [96mEMBEDDED_TEMPLATES[0m
+[94m[Glob][0m pattern: [96msrc/templates/**/*[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/sre.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/pm.md[0m
+[94m[Glob][0m pattern: [96mtests/core/*.test.ts[0m
+[94m[Glob][0m pattern: [96mtests/commands/*.test.ts[0m
+Now let me read the remaining template files and check what prompts are available from inquirer.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/frontend.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/backend.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/qa.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/appsec.md[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/devops.md[0m
+Now let me check what inquirer prompts are available and the existing test patterns.
+[94m[Grep][0m pattern: [96mfrom '@inquirer/prompts'[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/tests/core/config.test.ts[0m
+[94m[TodoWrite][0m
+Now I have a complete picture. Let me implement the changes:
+
+1. **Create `src/templates/embedded.ts`** — Embed all 7 template files as string constants (following the hooks pattern)
+2. **Modify `src/commands/init.ts`** — Add `--templates` flag, interactive prompt, and template installation logic
+
+Let me start with the embedded templates file.
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/src/templates/embedded.ts[0m "// Embedded agent prompt templates — bundled as string constants so they ship with
+// any distribution format (tsc, Bun compile, npm package).
+//
+// If you edit the template .md files in templates/age... (23408 chars)"
+Now let me modify `init.ts` to add the `--templates` option and template installation logic.
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m edit: "import { Command } from 'commander';
+import { exis..." → "import { Command } from 'commander';
+import { exis..."
+Now add the `--templates` option to the command definition:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m edit: "    .option('--yes', 'Skip interactive prompts, us..." → "    .option('--yes', 'Skip interactive prompts, us..."
+Now update the `runInit` function signature and add template installation logic:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m edit: "async function runInit(
+  cwd: string,
+  opts: { a..." → "async function runInit(
+  cwd: string,
+  opts: { a..."
+Now add the template installation step between the worktree hook registration and the gitignore update. Let me find the right spot:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m edit: "  // 9. Update .gitignore
+  updateGitignore(cwd);
+..." → "  // 9. Install agent prompt templates
+  const ins..."
+Now add the `installTemplates` helper function before the existing helpers section:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m edit: "// ── Helpers ────────────────────────────────────..." → "// ── Template installation ──────────────────────..."
+Let me verify the final state of the file:
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m
+The code looks good. Now let me run the quality checks.
+[94m[TodoWrite][0m
+[94m[Bash][0m Run TypeScript type checking $ npm run typecheck 2>&1
+[94m[Bash][0m Run vitest tests $ npm test 2>&1
+[94m[Bash][0m Run TypeScript compilation $ npm run build 2>&1
+All quality checks pass. Now let me close the bead and document learnings.
+[94m[TodoWrite][0m
+[94m[Bash][0m Close the bead $ bd close agenthive-9b5.3 --db /home/leonardosg/repos/projects/agenthive/.beads/beads.db --reason "Im...
+Now document learnings in progress.md:
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "  - Quality checks: typecheck, 113 tests (5 suites..." → "  - Quality checks: typecheck, 113 tests (5 suites..."
+[94m[TodoWrite][0m
+<promise>COMPLETE</promise>
+
+## Summary
+
+Implemented US-003: Install templates during `hive init`. Changes:
+
+**New file: `src/templates/embedded.ts`**
+- All 7 agent templates (sre, frontend, backend, qa, appsec, devops, pm) embedded as string constants, following the same pattern as `src/hooks/embedded.ts` for distribution compatibility (tsc, Bun compile, npm)
+
+**Modified: `src/commands/init.ts`**
+- Added `--templates [value]` CLI option
+- `--templates` or `--yes` → auto-installs templates
+- `--templates=none` → explicitly skips
+- Interactive mode → prompts "Install agent prompt templates? (Y/n)"
+- Templates go to `.claude/agents/<name>.md` using the `agent` field from presets
+- Existing files are skipped with a warning (no overwrites)
+- Summary output lists installed templates
+- "Next steps" adapts based on whether templates were installed
+
+All quality gates pass: typecheck, 113 tests (5 suites), build.

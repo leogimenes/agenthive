@@ -53,3 +53,20 @@ after each iteration and it's included in prompts for context.
   - Quality checks: typecheck, 113 tests (5 suites), build all pass
 ---
 
+## 2026-03-03 - agenthive-9b5.4
+- Created `src/commands/templates.ts` with `hive templates` command and 4 subcommands:
+  - `hive templates list` — shows all 7 bundled templates with name, description, and status (not installed / installed / modified)
+  - `hive templates show <name>` — prints bundled template content to stdout
+  - `hive templates install <name...>` — copies templates to `.claude/agents/`, skips existing unless `--force`
+  - `hive templates diff <name>` — shows colorized unified diff between installed and bundled versions
+- "Modified" detection uses MD5 hash comparison of installed file vs bundled template content
+- `--dir <path>` flag on the parent command overrides output directory (default: `.claude/agents/` relative to hive root)
+- Registered command in `src/index.ts` via `registerTemplatesCommand(program)`
+- Files changed: `src/commands/templates.ts` (new), `src/index.ts` (import + registration)
+- **Learnings:**
+  - Commander supports nested subcommands well — define them on the parent `Command` returned by `.command()`; options on the parent are accessed via `cmd.opts()` not `program.opts()`
+  - `diff -u` exits with code 1 when files differ — use `|| true` to prevent `execSync` from throwing
+  - `resolveHiveRoot` throws when no `.hive/` directory exists; the templates command gracefully falls back to `cwd` since it doesn't require an initialized hive (templates can be installed before `hive init`)
+  - Quality checks: typecheck, 113 tests (5 suites), build all pass
+---
+

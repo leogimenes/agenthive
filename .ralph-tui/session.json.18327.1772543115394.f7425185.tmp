@@ -3,10 +3,10 @@
   "sessionId": "658b289a-22b8-44d3-b28c-70e108b85935",
   "status": "running",
   "startedAt": "2026-03-03T12:36:02.212Z",
-  "updatedAt": "2026-03-03T13:01:35.177Z",
-  "currentIteration": 2,
+  "updatedAt": "2026-03-03T13:05:15.393Z",
+  "currentIteration": 3,
   "maxIterations": 2,
-  "tasksCompleted": 2,
+  "tasksCompleted": 3,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -29,8 +29,8 @@
       {
         "id": "agenthive-9b5.3",
         "title": "US-003: Install templates during hive init",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "agenthive-9b5.4",
@@ -66,6 +66,16 @@
       "durationMs": 86240,
       "startedAt": "2026-03-03T12:40:10.758Z",
       "endedAt": "2026-03-03T12:41:36.998Z"
+    },
+    {
+      "iteration": 3,
+      "status": "completed",
+      "taskId": "agenthive-9b5.3",
+      "taskTitle": "US-003: Install templates during hive init",
+      "taskCompleted": true,
+      "durationMs": 233372,
+      "startedAt": "2026-03-03T12:57:41.657Z",
+      "endedAt": "2026-03-03T13:01:35.029Z"
     }
   ],
   "skippedTaskIds": [],

@@ -13,6 +13,7 @@ import { registerTailCommand } from './commands/tail.js';
 import { registerConfigCommand } from './commands/config.js';
 import { registerUiCommand } from './commands/ui.js';
 import { registerPlanCommand } from './commands/plan.js';
+import { registerTemplatesCommand } from './commands/templates.js';
 
 // Read version from package.json at dev/install time, fall back for
 // standalone binaries where the filesystem layout doesn't exist.
@@ -49,5 +50,6 @@ registerTailCommand(program);
 registerConfigCommand(program);
 registerUiCommand(program);
 registerPlanCommand(program);
+registerTemplatesCommand(program);
 
 program.parse();
