@@ -53,3 +53,20 @@ after each iteration and it's included in prompts for context.
   - The `addHelpText('after', ...)` commander method is useful for appending installation instructions to `--help` output
   - Completion scripts are pure string generation — no external dependencies needed
 ---
+
+## 2026-03-03 - agenthive-2h2.10
+- Implemented `hive add <name>` and `hive remove <name>` commands for post-init agent management
+- Files changed: `src/commands/agent.ts` (new), `src/index.ts` (registration), `src/commands/completion.ts` (add/remove completions), `src/commands/init.ts` (updated error message), `src/core/worktree.ts` (updated error message)
+- Features:
+  - `hive add <name>` with options: `--agent`, `--poll`, `--budget`, `--daily-max`, `--description`
+  - Validates name uniqueness and role tag collision
+  - Creates worktree, registers hooks, updates config.yaml with comment preservation via `yaml` `parseDocument`
+  - `hive remove <name>` with `--force` (remove running agent) and `--delete-branch`
+  - Checks running state, kills tmux window and process if forced, removes worktree, updates config.yaml, cleans state files
+  - Updated error messages in `init.ts` and `worktree.ts` to reference `hive add`/`hive remove`
+  - Shell completions added for bash, zsh, and fish
+- **Learnings:**
+  - `yaml` package's `parseDocument()` + `doc.setIn()`/`doc.deleteIn()` preserves comments and formatting when modifying YAML programmatically
+  - The `registerHooksInWorktree` helper from `init.ts` was duplicated since it's not exported and is tightly coupled to the init flow — could be extracted to a shared module in the future
+  - Commander's `parseFloat` can be passed directly as the option parser for numeric flags
+---

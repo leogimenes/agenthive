@@ -4,6 +4,7 @@ import { Command } from 'commander';
 const COMMANDS = [
   'init', 'launch', 'kill', 'status', 'dispatch', 'tail',
   'config', 'ui', 'plan', 'templates', 'merge', 'completion',
+  'add', 'remove',
 ];
 
 // ── Commands that accept agent names as arguments ───────────────────
@@ -137,6 +138,14 @@ _hive_completions() {
     templates)
       COMPREPLY=( $(compgen -W "list show install diff --dir --help" -- "$cur") )
       ;;
+    add)
+      COMPREPLY=( $(compgen -W "--agent --poll --budget --daily-max --description --help" -- "$cur") )
+      ;;
+    remove)
+      local agents
+      agents=$(_hive_agents)
+      COMPREPLY=( $(compgen -W "$agents --force --delete-branch --help" -- "$cur") )
+      ;;
   esac
 }
 
@@ -166,6 +175,8 @@ _hive() {
     'templates:Manage agent prompt templates'
     'merge:Rebase agent branches onto main and push in order'
     'completion:Output shell completion script'
+    'add:Add a new agent to the hive'
+    'remove:Remove an agent from the hive'
   )
 
   global_flags=(
@@ -278,6 +289,23 @@ _hive() {
         '--dir[Template directory]:directory:_directories' \\
         '1:subcommand:_describe "subcommand" subcommands'
       ;;
+    add)
+      _arguments \\
+        '--agent[Agent definition file name]:file:' \\
+        '--poll[Poll interval in seconds]:seconds:' \\
+        '--budget[Max USD per task]:usd:' \\
+        '--daily-max[Max USD per day]:usd:' \\
+        '--description[Agent description]:text:' \\
+        '1:name:'
+      ;;
+    remove)
+      local -a agents
+      agents=(\${(f)"$(_hive_agents)"})
+      _arguments \\
+        '--force[Remove even if running]' \\
+        '--delete-branch[Delete the git branch]' \\
+        '1:agent:compadd -a agents'
+      ;;
   esac
 }
 
@@ -298,7 +326,7 @@ function fishCompletion(): string {
     '# Detect if a subcommand has been given',
     'function __hive_no_subcommand',
     '  set -l cmd (commandline -opc)',
-    '  for c in init launch kill status dispatch tail config ui plan templates merge completion',
+    '  for c in init launch kill status dispatch tail config ui plan templates merge completion add remove',
     '    if contains -- $c $cmd',
     '      return 1',
     '    end',
@@ -333,6 +361,8 @@ function fishCompletion(): string {
     templates: 'Manage agent prompt templates',
     merge: 'Rebase agent branches onto main and push in order',
     completion: 'Output shell completion script',
+    add: 'Add a new agent to the hive',
+    remove: 'Remove an agent from the hive',
   };
 
   for (const [cmd, desc] of Object.entries(commandDescs)) {
@@ -406,6 +436,20 @@ function fishCompletion(): string {
   lines.push('# templates subcommands');
   lines.push('complete -c hive -n "__hive_using_subcommand templates" -a "list show install diff" -d "Templates subcommand"');
   lines.push('complete -c hive -n "__hive_using_subcommand templates" -l dir -d "Template directory"');
+
+  lines.push('');
+  lines.push('# add options');
+  lines.push('complete -c hive -n "__hive_using_subcommand add" -l agent -d "Agent definition file name"');
+  lines.push('complete -c hive -n "__hive_using_subcommand add" -l poll -d "Poll interval in seconds"');
+  lines.push('complete -c hive -n "__hive_using_subcommand add" -l budget -d "Max USD per task"');
+  lines.push('complete -c hive -n "__hive_using_subcommand add" -l daily-max -d "Max USD per day"');
+  lines.push('complete -c hive -n "__hive_using_subcommand add" -l description -d "Agent description"');
+
+  lines.push('');
+  lines.push('# remove — agent names + options');
+  lines.push('complete -c hive -n "__hive_using_subcommand remove" -a "(__hive_agents)" -d "Agent name"');
+  lines.push('complete -c hive -n "__hive_using_subcommand remove" -l force -d "Remove even if running"');
+  lines.push('complete -c hive -n "__hive_using_subcommand remove" -l delete-branch -d "Delete the git branch"');
 
   lines.push('');
 

@@ -22,7 +22,7 @@ export async function createWorktree(
 
   if (existsSync(worktreePath)) {
     throw new Error(
-      `Worktree already exists at ${worktreePath}. Remove it with \`git worktree remove ${worktreePath}\` and retry, or delete the directory manually.`,
+      `Worktree already exists at ${worktreePath}. Remove it with \`hive remove ${name}\` or \`git worktree remove ${worktreePath}\` and retry.`,
     );
   }
 

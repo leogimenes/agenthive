@@ -3,10 +3,10 @@
   "sessionId": "603f043a-3618-44a3-ae8f-6b8ed6a30d94",
   "status": "running",
   "startedAt": "2026-03-03T13:55:54.410Z",
-  "updatedAt": "2026-03-03T14:03:22.630Z",
-  "currentIteration": 2,
+  "updatedAt": "2026-03-03T14:07:14.279Z",
+  "currentIteration": 3,
   "maxIterations": 2,
-  "tasksCompleted": 2,
+  "tasksCompleted": 3,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -29,8 +29,8 @@
       {
         "id": "agenthive-2h2.3",
         "title": "US-003: Shell completions for bash, zsh, and fish",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "agenthive-2h2.4",
@@ -96,6 +96,16 @@
       "durationMs": 187361,
       "startedAt": "2026-03-03T13:57:07.502Z",
       "endedAt": "2026-03-03T14:00:14.863Z"
+    },
+    {
+      "iteration": 3,
+      "status": "completed",
+      "taskId": "agenthive-2h2.3",
+      "taskTitle": "US-003: Shell completions for bash, zsh, and fish",
+      "taskCompleted": true,
+      "durationMs": 186182,
+      "startedAt": "2026-03-03T14:00:16.238Z",
+      "endedAt": "2026-03-03T14:03:22.420Z"
     }
   ],
   "skippedTaskIds": [],

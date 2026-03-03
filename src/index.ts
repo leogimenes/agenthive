@@ -16,6 +16,7 @@ import { registerPlanCommand } from './commands/plan.js';
 import { registerTemplatesCommand } from './commands/templates.js';
 import { registerMergeCommand } from './commands/merge.js';
 import { registerCompletionCommand } from './commands/completion.js';
+import { registerAddCommand, registerRemoveCommand } from './commands/agent.js';
 
 // Read version from package.json at dev/install time, fall back for
 // standalone binaries where the filesystem layout doesn't exist.
@@ -55,5 +56,7 @@ registerPlanCommand(program);
 registerTemplatesCommand(program);
 registerMergeCommand(program);
 registerCompletionCommand(program);
+registerAddCommand(program);
+registerRemoveCommand(program);
 
 program.parse();
