@@ -23,3 +23,14 @@ after each iteration and it's included in prompts for context.
   - This is a content-only change (markdown files) — no TypeScript changes needed for US-001
 ---
 
+## 2026-03-03 - agenthive-9b5.2
+- Verified all 7 bundled templates (sre, frontend, backend, qa, appsec, devops, pm) already meet US-002 acceptance criteria
+- Each template is 67-69 lines (within the 40-80 requirement), with role-specific focus areas and out-of-scope boundaries
+- Role-specific content verified: SRE→infra/reliability, Frontend→UI/a11y, Backend→API/services, QA→tests only, Security→auth/OWASP, DevOps→CI/CD/Docker, PM→coordination/specs
+- All templates include full chat protocol (DONE, BLOCKER, REQUEST, STATUS, QUESTION) with role-appropriate examples
+- No code changes needed — templates were fully authored in US-001
+- **Learnings:**
+  - US-001 and US-002 overlap significantly — US-001 created the format AND the content, so US-002 was verification-only
+  - Quality checks: typecheck, 113 tests (5 suites), build all pass
+---
+

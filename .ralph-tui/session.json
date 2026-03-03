@@ -3,10 +3,10 @@
   "sessionId": "658b289a-22b8-44d3-b28c-70e108b85935",
   "status": "running",
   "startedAt": "2026-03-03T12:36:02.212Z",
-  "updatedAt": "2026-03-03T12:36:37.550Z",
-  "currentIteration": 0,
+  "updatedAt": "2026-03-03T12:40:10.840Z",
+  "currentIteration": 1,
   "maxIterations": 2,
-  "tasksCompleted": 0,
+  "tasksCompleted": 1,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -17,8 +17,8 @@
       {
         "id": "agenthive-9b5.1",
         "title": "US-001: Define the template format and directory structure",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "agenthive-9b5.2",
@@ -46,11 +46,22 @@
       }
     ]
   },
-  "iterations": [],
+  "iterations": [
+    {
+      "iteration": 1,
+      "status": "completed",
+      "taskId": "agenthive-9b5.1",
+      "taskTitle": "US-001: Define the template format and directory structure",
+      "taskCompleted": true,
+      "durationMs": 211982,
+      "startedAt": "2026-03-03T12:36:37.460Z",
+      "endedAt": "2026-03-03T12:40:09.442Z"
+    }
+  ],
   "skippedTaskIds": [],
   "cwd": "/home/leonardosg/repos/projects/agenthive",
   "activeTaskIds": [
-    "agenthive-9b5.1"
+    "agenthive-9b5.2"
   ],
   "subagentPanelVisible": false
 }

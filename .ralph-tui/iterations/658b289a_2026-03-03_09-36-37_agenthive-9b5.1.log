@@ -1,0 +1,124 @@
+# Iteration 1 Log
+
+## Metadata
+
+- **Task ID**: agenthive-9b5.1
+- **Task Title**: US-001: Define the template format and directory structure
+- **Description**: As a contributor writing agent templates I want a documented, consistent template format with standard sections So that all templates follow the same structure and agents receive uniform coordination ...
+- **Status**: completed
+- **Task Completed**: Yes
+- **Promise Detected**: Yes
+- **Started At**: 2026-03-03T12:36:37.460Z
+- **Ended At**: 2026-03-03T12:40:09.442Z
+- **Duration**: 3m 31s
+- **Input Tokens**: 79
+- **Output Tokens**: 11831
+- **Total Tokens**: 11910
+- **Agent**: claude
+- **Model**: claude-opus-4-6
+- **Epic**: agenthive-9b5
+- **Sandbox Mode**: auto
+- **Sandbox Network**: Enabled
+--- RAW OUTPUT ---
+[94m[TodoWrite][0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Glob][0m [95m/home/leonardosg/repos/projects/agenthive[0m pattern: [96mtemplates/**/*[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/templates/config.yaml[0m
+[94m[Grep][0m [95m/home/leonardosg/repos/projects/agenthive/src[0m pattern: [96mbuildPrompt|HIVE_CHAT_FILE|HIVE_AGENT_NAME|HIVE_AGENT_ROLE[0m
+[94m[Grep][0m [95m/home/leonardosg/repos/projects/agenthive/src/types/config.ts[0m pattern: [96mpreset|agent.*role|sre|frontend|backend|appsec|devops[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/types/config.ts[0m
+[94m[Grep][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m pattern: [96mbuildPrompt[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m
+[94m[Grep][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m pattern: [96mHIVE_CHAT_FILE|HIVE_AGENT_NAME|HIVE_AGENT_ROLE[0m
+[94m[Grep][0m [95m/home/leonardosg/repos/projects/agenthive/src[0m pattern: [96mPRESETS|presets|preset[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/commands/init.ts[0m
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/core/polling.ts[0m
+Now let me look at the embedded hooks pattern since templates will need similar treatment for compiled builds.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/src/hooks/embedded.ts[0m
+[94m[Glob][0m [95m/home/leonardosg/repos/projects/agenthive[0m pattern: [96msrc/hooks/*.sh[0m
+[94m[TodoWrite][0m
+Now I have a clear picture. Let me implement US-001. I need to:
+
+1. Create `templates/agents/` directory with properly formatted template files
+2. Each template must have standard sections: Identity, Responsibilities, Workflow, Conventions, Communication Protocol
+3. The Communication Protocol section must reference `$HIVE_CHAT_FILE`, `$HIVE_AGENT_NAME`, `$HIVE_AGENT_ROLE`
+4. Templates must be generic (no framework-specific details)
+5. Each template should have a header comment explaining what it is
+
+Let me create the template files. I'll start with one well-documented template to establish the format, then create placeholder templates for the other roles.
+
+Looking at the acceptance criteria more carefully:
+- US-001 is just about format and directory structure, not writing all 7 full templates (that's US-002)
+- I need to establish the format with standard sections and create the directory
+
+Let me create all 7 template files with the standard format. US-001 says "each template is a Markdown file with standard sections" and the directory must exist. US-002 is about making them high-quality/40-80 lines each. I'll create them with the proper structure and reasonable content so US-001 is complete.
+[94m[Bash][0m List existing templates directory $ ls /home/leonardosg/repos/projects/agenthive/templates/
+[94m[Bash][0m Create templates/agents/ directory $ mkdir -p /home/leonardosg/repos/projects/agenthive/templates/agents
+Now let me create all 7 template files with the standardized format. Each template has: header comment, Identity, Responsibilities, Workflow, Conventions, Communication Protocol.
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/sre.md[0m "<!-- AgentHive Agent Template: SRE
+     This file defines the system prompt for the SRE (Site Reliability Engineer) agent.
+     Install it to .claude/agents/sre.md in your project. Customize as needed... (3131 chars)"
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/frontend.md[0m "<!-- AgentHive Agent Template: Frontend Developer
+     This file defines the system prompt for the Frontend agent.
+     Install it to .claude/agents/frontend.md in your project. Customize as needed. -... (3278 chars)"
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/backend.md[0m "<!-- AgentHive Agent Template: Backend Engineer
+     This file defines the system prompt for the Backend agent.
+     Install it to .claude/agents/backend.md in your project. Customize as needed. -->
+
+... (3213 chars)"
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/qa.md[0m "<!-- AgentHive Agent Template: Quality Analyst
+     This file defines the system prompt for the QA agent.
+     Install it to .claude/agents/qa.md in your project. Customize as needed. -->
+
+# Identity
+... (3210 chars)"
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/appsec.md[0m "<!-- AgentHive Agent Template: Security Engineer
+     This file defines the system prompt for the AppSec (Application Security) agent.
+     Install it to .claude/agents/appsec.md in your project. Cust... (3400 chars)"
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/devops.md[0m "<!-- AgentHive Agent Template: DevOps Engineer
+     This file defines the system prompt for the DevOps agent.
+     Install it to .claude/agents/devops.md in your project. Customize as needed. -->
+
+# I... (3309 chars)"
+[94m[Write][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents/pm.md[0m "<!-- AgentHive Agent Template: Product Manager
+     This file defines the system prompt for the PM agent.
+     Install it to .claude/agents/pm.md in your project. Customize as needed. -->
+
+# Identity
+... (3292 chars)"
+All 7 templates created. Let me verify they all follow the standard format and count lines.
+[94m[Bash][0m Count lines in each template file $ done
+[94m[Bash][0m Verify standard sections in all templates $ done
+All 7 templates have the 5 standard sections and are 67-68 lines each. Let me verify that the environment variables and chat format are referenced correctly.
+[94m[Grep][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents[0m pattern: [96m\$HIVE_CHAT_FILE|\$HIVE_AGENT_NAME|\$HIVE_AGENT_ROLE[0m
+[94m[Grep][0m [95m/home/leonardosg/repos/projects/agenthive/templates/agents[0m pattern: [96m\[ROLE\] TYPE[0m
+Good. Now let me run the quality checks.
+[94m[TodoWrite][0m
+[94m[Bash][0m Run TypeScript type checking $ npm run typecheck 2>&1
+[94m[Bash][0m Run vitest tests $ npm test 2>&1
+[94m[Bash][0m Build TypeScript to dist/ $ npm run build 2>&1
+All quality gates pass: typecheck, 113 tests, and build all succeed.
+[94m[TodoWrite][0m
+Now let me close the bead and document learnings.
+[94m[Bash][0m Close bead agenthive-9b5.1 $ bd close agenthive-9b5.1 --db /home/leonardosg/repos/projects/agenthive/.beads/beads.db --reason "Cr...
+Now document learnings in progress.md.
+[94m[Read][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m
+[94m[Edit][0m [95m/home/leonardosg/repos/projects/agenthive/.ralph-tui/progress.md[0m edit: "## Codebase Patterns (Study These First)
+
+*Add reu..." → "## Codebase Patterns (Study These First)
+
+- **Embe..."
+[94m[TodoWrite][0m
+Let me verify the acceptance criteria one final time:
+
+- **`templates/agents/` directory exists alongside `templates/config.yaml`** — Done
+- **Each template has standard sections: Identity, Responsibilities, Workflow, Conventions, Communication Protocol** — All 7 templates verified
+- **Communication Protocol includes `[ROLE] TYPE: message` format with `$HIVE_CHAT_FILE`** — All templates include it
+- **Templates reference `$HIVE_CHAT_FILE`, `$HIVE_AGENT_NAME`, `$HIVE_AGENT_ROLE`** — 35 total references across 7 files
+- **No project-specific details** — Templates are fully generic
+- **Header comment explains what it is and how to customize** — Each has an HTML comment header
+
+All quality gates pass (typecheck, 113 tests, build).
+
+<promise>COMPLETE</promise>
