@@ -1,4 +1,4 @@
-export type Panel = 'status' | 'chat' | 'input';
+export type Panel = 'status' | 'chat' | 'plan' | 'input';
 
 export type Action =
   | { type: 'quit' }
@@ -21,7 +21,8 @@ export type Action =
 export const HELP_ENTRIES = [
   { key: 'q / Ctrl+C', desc: 'Quit TUI' },
   { key: 'Tab', desc: 'Cycle panels' },
-  { key: '1 / 2 / 3', desc: 'Jump to panel (status/chat/input)' },
+  { key: '1 / 2 / 3 / 4', desc: 'Jump to panel (status/chat/plan/input)' },
+  { key: 'p', desc: 'Jump to plan panel' },
   { key: 'd', desc: 'Focus dispatch input' },
   { key: '?', desc: 'Toggle help overlay' },
   { key: '', desc: '' },
@@ -37,6 +38,14 @@ export const HELP_ENTRIES = [
   { key: 'g', desc: 'Jump to top' },
   { key: 'f', desc: 'Toggle agent filter' },
   { key: 't', desc: 'Toggle type filter' },
+  { key: '', desc: '' },
+  { key: '── Plan ──', desc: '' },
+  { key: 'j / k / ↑ / ↓', desc: 'Select task' },
+  { key: 'Enter', desc: 'Open task detail' },
+  { key: 'd', desc: 'Dispatch selected task' },
+  { key: 'f', desc: 'Cycle status filter' },
+  { key: 'a', desc: 'Cycle agent filter' },
+  { key: 'Esc', desc: 'Close detail view' },
   { key: '', desc: '' },
   { key: '── Input ──', desc: '' },
   { key: 'Enter', desc: 'Send message' },

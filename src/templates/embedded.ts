@@ -5,9 +5,10 @@
 // or update the strings below.
 
 export const EMBEDDED_TEMPLATES: Record<string, string> = {
-  sre: `<!-- AgentHive Agent Template: SRE
-     This file defines the system prompt for the SRE (Site Reliability Engineer) agent.
-     Install it to .claude/agents/sre.md in your project. Customize as needed. -->
+  sre: `---
+name: sre
+description: Site Reliability Engineer for infrastructure, reliability, performance, and operational health. Handles deployment, monitoring, database migrations, and incident response.
+---
 
 # Identity
 
@@ -74,9 +75,10 @@ Where \`ROLE\` is your chat role tag (available as \`$HIVE_AGENT_ROLE\`), \`TYPE
 \`\`\`
 `,
 
-  frontend: `<!-- AgentHive Agent Template: Frontend Developer
-     This file defines the system prompt for the Frontend agent.
-     Install it to .claude/agents/frontend.md in your project. Customize as needed. -->
+  frontend: `---
+name: frontend
+description: Frontend Developer for UI components, client-side logic, and user experience. Handles layouts, state management, accessibility, and API integration.
+---
 
 # Identity
 
@@ -144,9 +146,10 @@ Where \`ROLE\` is your chat role tag (available as \`$HIVE_AGENT_ROLE\`), \`TYPE
 \`\`\`
 `,
 
-  backend: `<!-- AgentHive Agent Template: Backend Engineer
-     This file defines the system prompt for the Backend agent.
-     Install it to .claude/agents/backend.md in your project. Customize as needed. -->
+  backend: `---
+name: backend
+description: Backend Engineer for API endpoints, business logic, and server-side services. Handles routing, validation, caching, and external integrations.
+---
 
 # Identity
 
@@ -214,9 +217,10 @@ Where \`ROLE\` is your chat role tag (available as \`$HIVE_AGENT_ROLE\`), \`TYPE
 \`\`\`
 `,
 
-  qa: `<!-- AgentHive Agent Template: Quality Analyst
-     This file defines the system prompt for the QA agent.
-     Install it to .claude/agents/qa.md in your project. Customize as needed. -->
+  qa: `---
+name: qa
+description: Quality Analyst for test coverage, edge case detection, and regression prevention. Writes unit, integration, and E2E tests without modifying production code.
+---
 
 # Identity
 
@@ -283,9 +287,10 @@ Where \`ROLE\` is your chat role tag (available as \`$HIVE_AGENT_ROLE\`), \`TYPE
 \`\`\`
 `,
 
-  appsec: `<!-- AgentHive Agent Template: Security Engineer
-     This file defines the system prompt for the AppSec (Application Security) agent.
-     Install it to .claude/agents/appsec.md in your project. Customize as needed. -->
+  appsec: `---
+name: appsec
+description: Application Security Engineer for authentication, authorization, input validation, secrets management, and OWASP compliance.
+---
 
 # Identity
 
@@ -353,9 +358,10 @@ Where \`ROLE\` is your chat role tag (available as \`$HIVE_AGENT_ROLE\`), \`TYPE
 \`\`\`
 `,
 
-  devops: `<!-- AgentHive Agent Template: DevOps Engineer
-     This file defines the system prompt for the DevOps agent.
-     Install it to .claude/agents/devops.md in your project. Customize as needed. -->
+  devops: `---
+name: devops
+description: DevOps Engineer for CI/CD pipelines, containerization, build systems, and deployment configuration.
+---
 
 # Identity
 
@@ -423,9 +429,10 @@ Where \`ROLE\` is your chat role tag (available as \`$HIVE_AGENT_ROLE\`), \`TYPE
 \`\`\`
 `,
 
-  pm: `<!-- AgentHive Agent Template: Product Manager
-     This file defines the system prompt for the PM agent.
-     Install it to .claude/agents/pm.md in your project. Customize as needed. -->
+  pm: `---
+name: pm
+description: Product Manager for task triage, specification writing, backlog management, and cross-agent coordination. Never writes production code.
+---
 
 # Identity
 

@@ -3,18 +3,22 @@ import { Box, Text, useApp, useInput, useStdout } from 'ink';
 import type { Panel } from './keybindings.js';
 import { useAgentStatus } from './hooks/useAgentStatus.js';
 import { useChatMessages } from './hooks/useChatMessages.js';
+import { usePlanData } from './hooks/usePlanData.js';
 import { Header } from './components/Header.js';
 import { CostBar } from './components/CostBar.js';
 import { StatusPanel } from './components/StatusPanel.js';
 import { ChatPanel } from './components/ChatPanel.js';
+import { PlanPanel } from './components/PlanPanel.js';
+import { PlanTaskDetail } from './components/PlanTaskDetail.js';
 import { InputBar } from './components/InputBar.js';
 import { AgentDetail } from './components/AgentDetail.js';
 import { HelpOverlay } from './components/HelpOverlay.js';
 import { appendMessage, resolveChatPath } from '../core/chat.js';
-import { resolveHivePath } from '../core/config.js';
+import { resolveHivePath, resolveAllAgents, loadConfig, resolveHiveRoot } from '../core/config.js';
+import { dispatchTask, loadPlan, savePlan } from '../core/plan.js';
 import type { MessageType } from '../types/config.js';
 
-const PANELS: Panel[] = ['status', 'chat', 'input'];
+const PANELS: Panel[] = ['status', 'chat', 'plan', 'input'];
 const VALID_TYPES = new Set(['REQUEST', 'STATUS', 'DONE', 'QUESTION', 'BLOCKER', 'ACK', 'WARN']);
 
 interface AppProps {
@@ -44,6 +48,15 @@ export function App({ cwd }: AppProps): React.ReactElement {
   const [inputError, setInputError] = useState<string | undefined>();
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+
+  // Plan panel state
+  const planData = usePlanData(cwd);
+  const [selectedTask, setSelectedTask] = useState(0);
+  const [showTaskDetail, setShowTaskDetail] = useState(false);
+  const [planStatusFilter, setPlanStatusFilter] = useState<string | undefined>();
+  const [planAgentFilter, setPlanAgentFilter] = useState<string | undefined>();
+  const [planScroll, setPlanScroll] = useState(0);
+  const planMaxVisible = Math.max(5, termHeight - 14);
 
   // Computed
   const agentNames = status.agents.map((a) => a.name);
@@ -141,6 +154,17 @@ export function App({ cwd }: AppProps): React.ReactElement {
     }
   }, [inputValue, agentNames]);
 
+  const getFilteredPlanTasks = useCallback(() => {
+    let filtered = planData.tasks;
+    if (planStatusFilter) {
+      filtered = filtered.filter((t) => t.status === planStatusFilter);
+    }
+    if (planAgentFilter) {
+      filtered = filtered.filter((t) => t.target === planAgentFilter);
+    }
+    return filtered;
+  }, [planData.tasks, planStatusFilter, planAgentFilter]);
+
   // Keyboard handling
   useInput((input, key) => {
     // Help toggle always works
@@ -218,8 +242,10 @@ export function App({ cwd }: AppProps): React.ReactElement {
     }
     if (input === '1') { setActivePanel('status'); return; }
     if (input === '2') { setActivePanel('chat'); return; }
-    if (input === '3') { setActivePanel('input'); return; }
-    if (input === 'd') {
+    if (input === '3') { setActivePanel('plan'); return; }
+    if (input === '4') { setActivePanel('input'); return; }
+    if (input === 'p') { setActivePanel('plan'); return; }
+    if (input === 'd' && activePanel !== 'plan') {
       setActivePanel('input');
       return;
     }
@@ -285,12 +311,83 @@ export function App({ cwd }: AppProps): React.ReactElement {
       }
       return;
     }
+
+    // Plan panel keys
+    if (activePanel === 'plan') {
+      if (key.escape && showTaskDetail) {
+        setShowTaskDetail(false);
+        return;
+      }
+      if ((input === 'j' || key.downArrow) && !showTaskDetail) {
+        const filteredTasks = getFilteredPlanTasks();
+        setSelectedTask((prev) => Math.min(prev + 1, filteredTasks.length - 1));
+        // Auto-scroll
+        if (selectedTask + 1 >= planScroll + planMaxVisible) {
+          setPlanScroll((prev) => prev + 1);
+        }
+        return;
+      }
+      if ((input === 'k' || key.upArrow) && !showTaskDetail) {
+        setSelectedTask((prev) => Math.max(prev - 1, 0));
+        if (selectedTask - 1 < planScroll) {
+          setPlanScroll((prev) => Math.max(0, prev - 1));
+        }
+        return;
+      }
+      if (key.return && !showTaskDetail) {
+        setShowTaskDetail(true);
+        return;
+      }
+      if (input === 'f' && !showTaskDetail) {
+        const statuses: Array<string | undefined> = [undefined, 'open', 'ready', 'dispatched', 'running', 'done', 'failed', 'blocked'];
+        const idx = statuses.indexOf(planStatusFilter);
+        setPlanStatusFilter(statuses[(idx + 1) % statuses.length]);
+        setSelectedTask(0);
+        setPlanScroll(0);
+        return;
+      }
+      if (input === 'a' && !showTaskDetail) {
+        const agents: Array<string | undefined> = [undefined, ...new Set(planData.tasks.map((t) => t.target))];
+        const idx = agents.indexOf(planAgentFilter);
+        setPlanAgentFilter(agents[(idx + 1) % agents.length]);
+        setSelectedTask(0);
+        setPlanScroll(0);
+        return;
+      }
+      if (input === 'd') {
+        const filteredTasks = getFilteredPlanTasks();
+        const selected = filteredTasks[selectedTask];
+        if (selected && selected.status === 'ready') {
+          try {
+            const hivePath = resolveHivePath(cwd);
+            const config = loadConfig(cwd);
+            const hiveRoot = resolveHiveRoot(cwd);
+            const plan = loadPlan(hivePath);
+            if (plan) {
+              const task = plan.tasks.find((t) => t.id === selected.id);
+              if (task && task.status === 'ready') {
+                const chatFilePath = resolveChatPath(hivePath);
+                const allAgents = resolveAllAgents(config, hiveRoot);
+                const agent = allAgents.find((a) => a.name === task.target);
+                const role = agent?.chatRole ?? task.target.toUpperCase();
+                dispatchTask(chatFilePath, task, role);
+                savePlan(hivePath, plan);
+              }
+            }
+          } catch {
+            // Silently ignore
+          }
+        }
+        return;
+      }
+      return;
+    }
   });
 
   if (showHelp) {
     return (
       <Box flexDirection="column" height={termHeight}>
-        <Header status={status} />
+        <Header status={status} planStats={planData.stats.total > 0 ? { ready: planData.stats.ready, total: planData.stats.total } : undefined} />
         <HelpOverlay />
       </Box>
     );
@@ -300,7 +397,7 @@ export function App({ cwd }: AppProps): React.ReactElement {
 
   return (
     <Box flexDirection="column" height={termHeight}>
-      <Header status={status} />
+      <Header status={status} planStats={planData.stats.total > 0 ? { ready: planData.stats.ready, total: planData.stats.total } : undefined} />
       <CostBar status={status} />
 
       <Box flexDirection="row" flexGrow={1}>
@@ -310,7 +407,25 @@ export function App({ cwd }: AppProps): React.ReactElement {
           focused={activePanel === 'status'}
         />
 
-        {showDetail && selectedAgentData ? (
+        {activePanel === 'plan' ? (
+          showTaskDetail && getFilteredPlanTasks()[selectedTask] ? (
+            <PlanTaskDetail
+              task={getFilteredPlanTasks()[selectedTask]}
+              plan={planData.plan!}
+              focused={true}
+            />
+          ) : (
+            <PlanPanel
+              tasks={planData.tasks}
+              selectedIndex={selectedTask}
+              focused={activePanel === 'plan'}
+              scrollOffset={planScroll}
+              maxVisible={planMaxVisible}
+              statusFilter={planStatusFilter}
+              agentFilter={planAgentFilter}
+            />
+          )
+        ) : showDetail && selectedAgentData ? (
           <AgentDetail
             agent={selectedAgentData}
             messages={chat.messages}

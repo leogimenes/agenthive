@@ -1,7 +1,9 @@
 import { Command } from 'commander';
 import { resolve } from 'node:path';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import chalk from 'chalk';
+import { input, select, checkbox, confirm } from '@inquirer/prompts';
 import { parse as parseYaml } from 'yaml';
 import { stringify as stringifyYaml } from 'yaml';
 import {
@@ -26,9 +28,10 @@ import {
   getChildTasks,
   computeParentStatus,
   reconcilePlanWithChat,
+  dispatchTask,
   PRIORITY_ORDER,
 } from '../core/plan.js';
-import { appendMessage, resolveChatPath } from '../core/chat.js';
+import { resolveChatPath } from '../core/chat.js';
 import type { Plan, PlanTask, Priority, TaskStatus } from '../types/plan.js';
 
 // ── Status icons and colors ──────────────────────────────────────────
@@ -67,6 +70,15 @@ export function registerPlanCommand(program: Command): void {
     .command('plan')
     .description('Plan-driven task tracking and dispatch');
 
+  plan.addHelpText('after', `
+Quick start:
+  hive plan add                 Add a task (interactive wizard)
+  hive plan create              AI-assisted plan creation
+  hive plan                     View the board
+  hive plan dispatch            Dispatch ready tasks
+  hive ui                       TUI with plan view (press p)
+`);
+
   // Default action: board view
   plan
     .option('--json', 'Output plan as JSON')
@@ -81,7 +93,7 @@ export function registerPlanCommand(program: Command): void {
 
   // plan add
   plan
-    .command('add <target> <title>')
+    .command('add [target] [title]')
     .description('Add a task to the plan')
     .option('--id <id>', 'Custom task ID')
     .option('--priority <p>', 'Priority: p0, p1, p2, p3', 'p2')
@@ -89,11 +101,16 @@ export function registerPlanCommand(program: Command): void {
     .option('--parent <id>', 'Parent task ID')
     .option('--labels <labels>', 'Comma-separated labels')
     .option('--description <text>', 'Task description')
-    .action(async (target: string, title: string, opts) => {
+    .option('-i, --interactive', 'Force interactive wizard mode')
+    .action(async (target: string | undefined, title: string | undefined, opts) => {
       const cwd = program.opts().cwd
         ? resolve(program.opts().cwd)
         : process.cwd();
-      await runAdd(cwd, target, title, opts);
+      if ((!target || !title) || opts.interactive) {
+        await runAddWizard(cwd, target, title, opts);
+      } else {
+        await runAdd(cwd, target, title, opts);
+      }
     });
 
   // plan ready
@@ -223,6 +240,20 @@ export function registerPlanCommand(program: Command): void {
         : process.cwd();
       await runStats(cwd, opts);
     });
+
+  // plan create
+  plan
+    .command('create')
+    .description('AI-assisted plan creation from a feature description')
+    .option('--budget <usd>', 'Max budget in USD for the PM agent', '1.00')
+    .option('--model <model>', 'Model for the PM agent', 'sonnet')
+    .option('--auto-import', 'Auto-import without confirmation')
+    .action(async (opts) => {
+      const cwd = program.opts().cwd
+        ? resolve(program.opts().cwd)
+        : process.cwd();
+      await runCreate(cwd, opts);
+    });
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -280,7 +311,7 @@ async function runBoard(
   const plan = loadOrCreatePlan(hivePath, config.session);
 
   if (plan.tasks.length === 0) {
-    console.log(chalk.gray('\nNo plan found. Run `hive plan add` to create tasks.\n'));
+    console.log(chalk.gray('\nPlan is empty. Run `hive plan add` to add your first task, or `hive plan create` for AI-assisted planning.\n'));
     return;
   }
 
@@ -369,14 +400,159 @@ async function runBoard(
     console.log(targetLine);
   }
 
-  // Summary
+  // Contextual guidance footer
   const ready = computeReadyTasks(plan);
-  if (ready.length > 0) {
-    console.log(
-      `\n${chalk.cyan(`Ready: ${ready.length} tasks can be dispatched now. Run \`hive plan dispatch\` to send them.`)}`,
-    );
+  const failed = plan.tasks.filter((t) => t.status === 'failed');
+  const allDone = plan.tasks.every((t) => t.status === 'done');
+
+  if (allDone) {
+    console.log(`\n${chalk.green('✓ All tasks complete!')}`);
+  } else if (failed.length > 0) {
+    console.log(`\n${chalk.red(`✗ ${failed.length} task(s) failed. Run \`hive plan reset <id>\` to retry.`)}`);
+    if (ready.length > 0) {
+      console.log(chalk.cyan(`  ${ready.length} task(s) ready to dispatch. Run \`hive plan dispatch\`.`));
+    }
+  } else if (ready.length > 0) {
+    console.log(`\n${chalk.cyan(`${ready.length} task(s) ready to dispatch. Run \`hive plan dispatch\` or press \`p\` in the TUI.`)}`);
+  } else {
+    console.log('');
   }
+}
+
+// ── Add wizard (Epic 1) ──────────────────────────────────────────────
+
+async function runAddWizard(
+  cwd: string,
+  preTarget?: string,
+  preTitle?: string,
+  opts: {
+    id?: string;
+    priority?: string;
+    dependsOn?: string;
+    parent?: string;
+    labels?: string;
+    description?: string;
+    interactive?: boolean;
+  } = {},
+): Promise<void> {
+  // TTY guard
+  if (!process.stdout.isTTY) {
+    console.error(
+      chalk.red(
+        'Interactive mode requires a terminal. Use flags: hive plan add <target> <title> [--priority p1] [--depends-on X]',
+      ),
+    );
+    process.exit(1);
+  }
+
+  const { hivePath, config, hiveRoot } = loadContext(cwd);
+  const plan = loadOrCreatePlan(hivePath, config.session);
+  const allAgents = resolveAllAgents(config, hiveRoot);
+
+  // Step 1: Title
+  const title = preTitle ?? await input({
+    message: 'Task title — what needs to be done?',
+    validate: (v) => (v.trim() ? true : 'Title is required'),
+  });
+
+  // Step 2: Target agent
+  const agentChoices = allAgents.map((a) => ({
+    name: `${a.name} — ${a.description}`,
+    value: a.name,
+  }));
+
+  let target: string;
+  if (preTarget) {
+    const valid = allAgents.find(
+      (a) => a.name.toLowerCase() === preTarget.toLowerCase() ||
+        a.chatRole.toLowerCase() === preTarget.toLowerCase(),
+    );
+    target = valid?.name ?? await select({
+      message: 'Which agent should handle this?',
+      choices: agentChoices,
+    });
+  } else {
+    target = await select({
+      message: 'Which agent should handle this?',
+      choices: agentChoices,
+    });
+  }
+
+  // Step 3: Priority
+  const priority = (opts.priority as string) ?? await select({
+    message: 'Priority level?',
+    choices: [
+      { name: 'p0 — Critical', value: 'p0' },
+      { name: 'p1 — High', value: 'p1' },
+      { name: 'p2 — Normal', value: 'p2' },
+      { name: 'p3 — Low', value: 'p3' },
+    ],
+    default: 'p2',
+  });
+
+  // Step 4: Description
+  const description = opts.description ?? await input({
+    message: 'Description (optional, Enter to skip):',
+  });
+
+  // Step 5: Dependencies
+  let dependsOn: string[] = [];
+  if (opts.dependsOn) {
+    dependsOn = opts.dependsOn.split(',').map((s) => s.trim()).filter(Boolean);
+  } else if (plan.tasks.length > 0) {
+    const depChoices = plan.tasks.map((t) => ({
+      name: `${t.id} — ${t.title} (${t.status})`,
+      value: t.id,
+    }));
+    dependsOn = await checkbox({
+      message: 'Dependencies — select tasks this depends on:',
+      choices: depChoices,
+    });
+  }
+
+  // Step 6: Parent
+  let parent: string | undefined = opts.parent;
+  if (!parent && plan.tasks.length > 0) {
+    const parentChoices = [
+      { name: 'None', value: '__none__' },
+      ...plan.tasks.map((t) => ({
+        name: `${t.id} — ${t.title}`,
+        value: t.id,
+      })),
+    ];
+    const selected = await select({
+      message: 'Parent task (for grouping)?',
+      choices: parentChoices,
+    });
+    parent = selected === '__none__' ? undefined : selected;
+  }
+
+  // Step 7: Summary & confirmation
   console.log('');
+  console.log(chalk.bold('Task summary:'));
+  console.log(`  Title:    ${title}`);
+  console.log(`  Agent:    ${target}`);
+  console.log(`  Priority: ${priority}`);
+  if (description) console.log(`  Desc:     ${description}`);
+  if (dependsOn.length > 0) console.log(`  Deps:     ${dependsOn.join(', ')}`);
+  if (parent) console.log(`  Parent:   ${parent}`);
+  console.log('');
+
+  const ok = await confirm({ message: 'Create this task?', default: true });
+  if (!ok) {
+    console.log(chalk.gray('Cancelled.'));
+    return;
+  }
+
+  // Delegate to runAdd with resolved values
+  await runAdd(cwd, target, title, {
+    id: opts.id,
+    priority,
+    dependsOn: dependsOn.length > 0 ? dependsOn.join(',') : undefined,
+    parent,
+    labels: opts.labels,
+    description: description || undefined,
+  });
 }
 
 // ── Add task (US-003) ────────────────────────────────────────────────
@@ -609,8 +785,22 @@ async function runDispatch(
     toDispatch = [agentReady[0]]; // highest priority
   } else if (opts.all) {
     toDispatch = ready;
+  } else if (process.stdout.isTTY && ready.length > 0) {
+    // Interactive mode: let user select tasks
+    const dispatchChoices = ready.map((t) => ({
+      name: `${pad(t.id, 10)} ${pad(t.priority, 4)} ${pad(t.target, 10)} — ${t.title}`,
+      value: t.id,
+      checked: true,
+    }));
+
+    const selectedIds = await checkbox({
+      message: 'Select tasks to dispatch:',
+      choices: dispatchChoices,
+    });
+
+    toDispatch = ready.filter((t) => selectedIds.includes(t.id));
   } else {
-    // One per agent (highest priority)
+    // Non-TTY fallback: one per agent (highest priority)
     const seen = new Set<string>();
     for (const task of ready) {
       if (!seen.has(task.target)) {
@@ -635,22 +825,10 @@ async function runDispatch(
   }
 
   // Actually dispatch
-  const now = new Date().toISOString();
   for (const task of toDispatch) {
-    task.status = 'dispatched';
-    task.dispatched_at = now;
-    task.updated_at = now;
-
-    // Resolve the agent's chat role
     const agent = allAgents.find((a) => a.name === task.target);
     const role = agent?.chatRole ?? task.target.toUpperCase();
-
-    // Build the message body
-    const descLine = task.description
-      ? `. ${task.description.split('\n')[0]}`
-      : '';
-    const body = `@${role}: [${task.id}] ${task.title}${descLine}`;
-    appendMessage(chatFilePath, 'USER', 'REQUEST', body);
+    dispatchTask(chatFilePath, task, role);
   }
 
   savePlan(hivePath, plan);
@@ -1384,4 +1562,264 @@ async function runStats(
       `$${estimatedCost.toFixed(2)} (${remainingTasks} tasks × $${avgBudget.toFixed(2)} avg)`,
   );
   console.log('');
+}
+
+// ── AI-assisted plan creation (Epic 3) ──────────────────────────────
+
+async function runCreate(
+  cwd: string,
+  opts: {
+    budget?: string;
+    model?: string;
+    autoImport?: boolean;
+  },
+): Promise<void> {
+  if (!process.stdout.isTTY) {
+    console.error(chalk.red('Interactive mode requires a terminal.'));
+    process.exit(1);
+  }
+
+  const { hivePath, config, hiveRoot } = loadContext(cwd);
+  const allAgents = resolveAllAgents(config, hiveRoot);
+
+  // Phase A: Gather input
+  const featureDesc = await input({
+    message: 'Describe the feature you want to build:',
+    validate: (v) => (v.trim() ? true : 'Description is required'),
+  });
+
+  const agentChoices = allAgents.map((a) => ({
+    name: `${a.name} — ${a.description}`,
+    value: a.name,
+    checked: true,
+  }));
+
+  const selectedAgents = await checkbox({
+    message: 'Which agents are available?',
+    choices: agentChoices,
+  });
+
+  if (selectedAgents.length === 0) {
+    console.error(chalk.red('At least one agent must be selected.'));
+    process.exit(1);
+  }
+
+  const budget = opts.budget ?? '1.00';
+  const agentList = selectedAgents.join(', ');
+  const prefixMap: Record<string, string> = {
+    backend: 'BE', frontend: 'FE', qa: 'QA', sre: 'SRE', security: 'SEC', appsec: 'SEC', pm: 'PM',
+  };
+
+  const agentDescriptions = selectedAgents
+    .map((name) => {
+      const agent = allAgents.find((a) => a.name === name);
+      const prefix = prefixMap[name] ?? name.toUpperCase().slice(0, 3);
+      return `- ${name} (ID prefix: ${prefix}-): ${agent?.description ?? 'agent'}`;
+    })
+    .join('\n');
+
+  const prompt = `You are a PM agent analyzing a codebase and creating a structured implementation plan.
+
+Feature request: ${featureDesc}
+
+Available agents:
+${agentDescriptions}
+
+Instructions:
+1. Explore the codebase to understand the architecture and relevant files
+2. Break the feature into discrete, well-scoped tasks
+3. Assign each task to the most appropriate agent
+4. Define dependencies between tasks (a task can only start after its dependencies are done)
+5. Set priorities: p0 (critical), p1 (high), p2 (normal), p3 (low)
+6. Use imperative titles (e.g., "Add pagination to list endpoint")
+
+Output a YAML block at the end of your analysis with this exact format:
+
+\`\`\`yaml
+tasks:
+  - id: BE-01
+    target: backend
+    title: "imperative title here"
+    priority: p1
+    description: "acceptance criteria and implementation notes"
+    depends_on: []
+  - id: FE-01
+    target: frontend
+    title: "another task"
+    priority: p2
+    description: "details"
+    depends_on: [BE-01]
+\`\`\`
+
+ID prefix convention: ${Object.entries(prefixMap).map(([k, v]) => `${v}- for ${k}`).join(', ')}.
+Number IDs sequentially per agent (e.g., BE-01, BE-02, FE-01, FE-02).`;
+
+  // Phase B: Spawn PM agent
+  console.log(chalk.bold('\n🐝 Spawning PM agent to analyze codebase...\n'));
+
+  const output = await new Promise<string>((resolvePromise, reject) => {
+    let stdout = '';
+    const child = spawn('claude', ['-p', '--max-turns', '20', prompt], {
+      cwd: hiveRoot,
+      stdio: ['inherit', 'pipe', 'inherit'],
+      env: { ...process.env },
+    });
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      stdout += text;
+      process.stdout.write(text);
+    });
+
+    child.on('close', (code) => {
+      if (code !== 0 && code !== null) {
+        reject(new Error(`PM agent exited with code ${code}`));
+      } else {
+        resolvePromise(stdout);
+      }
+    });
+
+    child.on('error', (err) => {
+      reject(new Error(`Failed to spawn PM agent: ${err.message}. Is 'claude' CLI installed?`));
+    });
+  });
+
+  // Phase C: Extract, review, import
+  console.log(chalk.bold('\n\n🐝 Extracting plan from PM output...\n'));
+
+  let yamlContent: string | null = null;
+  const yamlMatch = output.match(/```yaml\n([\s\S]+?)```/);
+  if (yamlMatch) {
+    yamlContent = yamlMatch[1];
+  } else {
+    // Try parsing entire output as YAML
+    try {
+      const parsed = parseYaml(output);
+      if (parsed?.tasks) {
+        yamlContent = output;
+      }
+    } catch {
+      // Not valid YAML
+    }
+  }
+
+  if (!yamlContent) {
+    const draftPath = resolve(hivePath, 'plan-draft.txt');
+    writeFileSync(draftPath, output, 'utf-8');
+    console.error(chalk.yellow(`No YAML plan found in PM output. Raw output saved to: ${draftPath}`));
+    console.error(chalk.gray('Edit the file and run `hive plan import <file>` to import manually.'));
+    process.exit(1);
+  }
+
+  let importedTasks: Partial<PlanTask>[];
+  try {
+    importedTasks = parseYamlImport(yamlContent);
+  } catch (err) {
+    const draftPath = resolve(hivePath, 'plan-draft.txt');
+    writeFileSync(draftPath, output, 'utf-8');
+    console.error(chalk.yellow(`Failed to parse YAML: ${err instanceof Error ? err.message : err}`));
+    console.error(chalk.gray(`Raw output saved to: ${draftPath}`));
+    process.exit(1);
+  }
+
+  // Display parsed tasks
+  console.log(chalk.bold(`Found ${importedTasks.length} tasks:\n`));
+  for (const t of importedTasks) {
+    const priColor = PRIORITY_COLOR[t.priority ?? 'p2'] ?? chalk.white;
+    console.log(`  ${pad(t.id ?? '???', 10)} ${priColor(pad(t.priority ?? 'p2', 4))} ${pad(t.target ?? '???', 10)} ${t.title ?? '(no title)'}`);
+    if (t.depends_on && t.depends_on.length > 0) {
+      console.log(chalk.gray(`    Deps: ${t.depends_on.join(', ')}`));
+    }
+  }
+  console.log('');
+
+  // Import or save
+  let doImport = opts.autoImport ?? false;
+  if (!doImport) {
+    doImport = await confirm({ message: 'Import this plan?', default: true });
+  }
+
+  if (!doImport) {
+    const savePath = resolve(hivePath, 'plan-draft.yaml');
+    writeFileSync(savePath, yamlContent, 'utf-8');
+    console.log(chalk.gray(`Plan saved to: ${savePath}`));
+    console.log(chalk.gray('Edit and run `hive plan import plan-draft.yaml` to import.'));
+    return;
+  }
+
+  // Run import logic
+  const plan = loadOrCreatePlan(hivePath, config.session);
+  const now = new Date().toISOString();
+  let added = 0;
+  const warnings: string[] = [];
+
+  for (const imported of importedTasks) {
+    if (!imported.target || !imported.title) {
+      warnings.push('Skipped task with missing target or title');
+      continue;
+    }
+
+    const taskId = imported.id ?? generateId(imported.title, imported.target);
+    if (plan.tasks.some((t) => t.id === taskId)) {
+      warnings.push(`Skipped "${taskId}" — already exists`);
+      continue;
+    }
+
+    const validTarget = allAgents.find(
+      (a) =>
+        a.name.toLowerCase() === imported.target!.toLowerCase() ||
+        a.chatRole.toLowerCase() === imported.target!.toLowerCase(),
+    );
+    if (!validTarget) {
+      warnings.push(`Skipped "${taskId}" — unknown target "${imported.target}"`);
+      continue;
+    }
+
+    const task: PlanTask = {
+      id: taskId,
+      title: imported.title,
+      target: validTarget.name,
+      priority: (imported.priority as Priority) ?? 'p2',
+      status: 'open',
+      depends_on: imported.depends_on ?? [],
+      created_at: now,
+      updated_at: now,
+      ...(imported.description ? { description: imported.description } : {}),
+      ...(imported.labels ? { labels: imported.labels } : {}),
+    };
+
+    plan.tasks.push(task);
+    added++;
+  }
+
+  // Validate dependencies
+  const taskIds = new Set(plan.tasks.map((t) => t.id));
+  for (const task of plan.tasks) {
+    task.depends_on = task.depends_on.filter((dep) => {
+      if (!taskIds.has(dep)) {
+        warnings.push(`${task.id}: removed unknown dependency "${dep}"`);
+        return false;
+      }
+      return true;
+    });
+  }
+
+  const dag = validateDAG(plan);
+  if (!dag.valid) {
+    console.error(chalk.red('Import would create dependency cycles:'));
+    for (const cycle of dag.cycles ?? []) {
+      console.error(chalk.red(`  Cycle: ${cycle.join(' → ')}`));
+    }
+    process.exit(1);
+  }
+
+  promoteReadyTasks(plan);
+  savePlan(hivePath, plan);
+
+  const readyCount = computeReadyTasks(plan).length;
+  console.log(chalk.green(`✓ Imported ${added} tasks (${readyCount} ready).`));
+  for (const w of warnings) {
+    console.log(chalk.yellow(`  ${w}`));
+  }
+  console.log(chalk.gray('Run `hive plan` to see the board, or `hive plan dispatch` to start.'));
 }

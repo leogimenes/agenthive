@@ -19,9 +19,11 @@ import {
   getChildTasks,
   computeParentStatus,
   sortByPriority,
+  dispatchTask,
 } from '../../src/core/plan.js';
 import type { Plan, PlanTask } from '../../src/types/plan.js';
 import type { ChatMessage } from '../../src/types/config.js';
+import { initChatFile, readMessages } from '../../src/core/chat.js';
 
 describe('plan', () => {
   let hivePath: string;
@@ -584,6 +586,77 @@ describe('plan', () => {
       const sorted = sortByPriority(tasks);
       expect(sorted[0].id).toBe('b');
       expect(sorted[1].id).toBe('a');
+    });
+  });
+
+  // ── dispatchTask ──────────────────────────────────────────────────
+
+  describe('dispatchTask', () => {
+    it('should set task status to dispatched', () => {
+      const chatFile = initChatFile(hivePath);
+      const task = makeTask({ id: 'BE-01', status: 'ready', title: 'Build API' });
+
+      dispatchTask(chatFile, task, 'BACKEND');
+
+      expect(task.status).toBe('dispatched');
+      expect(task.dispatched_at).toBeTruthy();
+      expect(task.updated_at).toBeTruthy();
+    });
+
+    it('should append a REQUEST message to the chat file', () => {
+      const chatFile = initChatFile(hivePath);
+      const task = makeTask({ id: 'BE-01', status: 'ready', title: 'Build API' });
+
+      dispatchTask(chatFile, task, 'BACKEND');
+
+      const messages = readMessages(chatFile);
+      expect(messages).toHaveLength(1);
+      expect(messages[0].role).toBe('USER');
+      expect(messages[0].type).toBe('REQUEST');
+      expect(messages[0].body).toContain('@BACKEND');
+      expect(messages[0].body).toContain('[BE-01]');
+      expect(messages[0].body).toContain('Build API');
+    });
+
+    it('should include first line of description in the message', () => {
+      const chatFile = initChatFile(hivePath);
+      const task = makeTask({
+        id: 'FE-01',
+        status: 'ready',
+        title: 'Build login page',
+        description: 'Add JWT token handling.\nAlso add refresh token logic.',
+      });
+
+      dispatchTask(chatFile, task, 'FRONTEND');
+
+      const messages = readMessages(chatFile);
+      expect(messages[0].body).toContain('. Add JWT token handling.');
+      // Should NOT include the second line
+      expect(messages[0].body).not.toContain('refresh token');
+    });
+
+    it('should work without a description', () => {
+      const chatFile = initChatFile(hivePath);
+      const task = makeTask({ id: 'QA-01', status: 'ready', title: 'Write tests' });
+
+      dispatchTask(chatFile, task, 'QA');
+
+      const messages = readMessages(chatFile);
+      expect(messages[0].body).toBe('@QA: [QA-01] Write tests');
+    });
+
+    it('should dispatch multiple tasks to the same chat file', () => {
+      const chatFile = initChatFile(hivePath);
+      const task1 = makeTask({ id: 'BE-01', status: 'ready', title: 'Build API' });
+      const task2 = makeTask({ id: 'FE-01', status: 'ready', title: 'Build UI' });
+
+      dispatchTask(chatFile, task1, 'BACKEND');
+      dispatchTask(chatFile, task2, 'FRONTEND');
+
+      const messages = readMessages(chatFile);
+      expect(messages).toHaveLength(2);
+      expect(messages[0].body).toContain('[BE-01]');
+      expect(messages[1].body).toContain('[FE-01]');
     });
   });
 });

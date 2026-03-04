@@ -15,6 +15,7 @@ import type {
   DAGValidation,
 } from '../types/plan.js';
 import type { ChatMessage } from '../types/config.js';
+import { appendMessage } from './chat.js';
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -485,6 +486,23 @@ export function sortByPriority(tasks: PlanTask[]): PlanTask[] {
     if (priDiff !== 0) return priDiff;
     return a.created_at.localeCompare(b.created_at);
   });
+}
+
+export function dispatchTask(
+  chatFilePath: string,
+  task: PlanTask,
+  chatRole: string,
+): void {
+  const now = new Date().toISOString();
+  task.status = 'dispatched';
+  task.dispatched_at = now;
+  task.updated_at = now;
+
+  const descLine = task.description
+    ? `. ${task.description.split('\n')[0]}`
+    : '';
+  const body = `@${chatRole}: [${task.id}] ${task.title}${descLine}`;
+  appendMessage(chatFilePath, 'USER', 'REQUEST', body);
 }
 
 export { PRIORITY_ORDER };

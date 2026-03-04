@@ -236,19 +236,20 @@ do_install() {
   info "Downloading hive-${PLATFORM}..."
   fetch_url "$BINARY_URL" "$TMPDIR/$BINARY_NAME"
 
-  info "Downloading checksum..."
-  fetch_url "$CHECKSUM_URL" "$TMPDIR/$BINARY_NAME.sha256"
+  # Verify checksum (if available)
+  if fetch_url "$CHECKSUM_URL" "$TMPDIR/$BINARY_NAME.sha256" 2>/dev/null; then
+    info "Verifying checksum..."
+    EXPECTED=$(awk '{print $1}' "$TMPDIR/$BINARY_NAME.sha256")
+    ACTUAL=$(cd "$TMPDIR" && $SHASUM "$BINARY_NAME" | awk '{print $1}')
 
-  # Verify checksum
-  info "Verifying checksum..."
-  EXPECTED=$(awk '{print $1}' "$TMPDIR/$BINARY_NAME.sha256")
-  ACTUAL=$(cd "$TMPDIR" && $SHASUM "$BINARY_NAME" | awk '{print $1}')
-
-  if [ "$EXPECTED" != "$ACTUAL" ]; then
-    error "Checksum verification failed!
+    if [ "$EXPECTED" != "$ACTUAL" ]; then
+      error "Checksum verification failed!
   Expected: $EXPECTED
   Got:      $ACTUAL
   The download may be corrupted. Please try again."
+    fi
+  else
+    info "No checksum file found, skipping verification."
   fi
 
   # Install

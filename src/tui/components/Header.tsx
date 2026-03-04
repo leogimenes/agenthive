@@ -4,9 +4,10 @@ import type { StatusData } from '../hooks/useAgentStatus.js';
 
 interface HeaderProps {
   status: StatusData;
+  planStats?: { ready: number; total: number };
 }
 
-export function Header({ status }: HeaderProps): React.ReactElement {
+export function Header({ status, planStats }: HeaderProps): React.ReactElement {
   return (
     <Box flexDirection="row" justifyContent="space-between" paddingX={1}>
       <Text bold color="yellow">
@@ -22,6 +23,15 @@ export function Header({ status }: HeaderProps): React.ReactElement {
         {'  '}
         <Text dimColor>spend:</Text>{' '}
         <Text bold>${status.totalSpend.toFixed(2)}</Text>
+        {planStats && planStats.total > 0 && (
+          <>
+            {'  '}
+            <Text dimColor>plan:</Text>
+            {' '}
+            <Text color="cyan" bold>{planStats.ready} ready</Text>
+            <Text dimColor> / {planStats.total} total</Text>
+          </>
+        )}
       </Text>
     </Box>
   );
