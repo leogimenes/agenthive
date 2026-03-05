@@ -1583,6 +1583,20 @@ async function runStats(
   const remainingTasks = plan.tasks.filter((t) => t.status !== 'done').length;
   const estimatedCost = remainingTasks * avgBudget;
 
+  // Per-epic progress data
+  const epics = plan.tasks.filter((t) => t.type === 'epic');
+  const epicStats = epics.map((epic) => {
+    const ps = computeParentStatus(plan, epic.id);
+    const children = getChildTasks(plan, epic.id);
+    const actualCost = children.reduce((s, c) => s + (c.actual_cost ?? 0), 0);
+    const estimatedCostEpic = children.reduce((s, c) => s + (c.estimated_cost ?? 0), 0);
+    return { epic, ps, actualCost, estimatedCostEpic };
+  });
+
+  // Total actual cost across all tasks
+  const totalActualCost = plan.tasks.reduce((s, t) => s + (t.actual_cost ?? 0), 0);
+  const totalEstimatedCost = plan.tasks.reduce((s, t) => s + (t.estimated_cost ?? 0), 0);
+
   if (opts.json) {
     console.log(
       JSON.stringify(
@@ -1592,6 +1606,20 @@ async function runStats(
           agentWorkload,
           criticalPath: criticalPath.map((t) => t.id),
           estimatedRemainingCost: estimatedCost,
+          epics: epicStats.map(({ epic, ps, actualCost, estimatedCostEpic }) => ({
+            id: epic.id,
+            title: epic.title,
+            status: epic.status,
+            done: ps.done,
+            total: ps.total,
+            running: ps.running,
+            failed: ps.failed,
+            blocked: ps.blocked,
+            actualCost,
+            estimatedCost: estimatedCostEpic,
+          })),
+          totalActualCost,
+          totalEstimatedCost,
         },
         null,
         2,
@@ -1600,7 +1628,7 @@ async function runStats(
     return;
   }
 
-  console.log(chalk.bold(`\n🐝 Plan: ${plan.name} — ${total} tasks\n`));
+  console.log(chalk.bold(`\nPlan: ${plan.name} — ${total} tasks\n`));
 
   // Status breakdown with progress bars
   console.log(chalk.bold('Status breakdown:'));
@@ -1617,6 +1645,29 @@ async function runStats(
     console.log(
       `  ${color(pad(status + ':', 14))} ${pad(String(count), 4)} (${pad(pct + '%', 4)}) ${color(bar)}`,
     );
+  }
+
+  // Per-epic progress bars
+  if (epicStats.length > 0) {
+    console.log(chalk.bold('\nEpic progress:'));
+    for (const { epic, ps, actualCost, estimatedCostEpic } of epicStats) {
+      if (ps.total === 0) continue;
+
+      const pct = Math.round((ps.done / ps.total) * 100);
+      const barLen = Math.round((ps.done / ps.total) * 20);
+      const bar = '█'.repeat(barLen) + '░'.repeat(20 - barLen);
+      const epicColor = STATUS_COLOR[epic.status] ?? chalk.white;
+
+      const costParts: string[] = [];
+      if (actualCost > 0) costParts.push(`$${actualCost.toFixed(2)} actual`);
+      else if (estimatedCostEpic > 0) costParts.push(`$${estimatedCostEpic.toFixed(2)} est.`);
+      const costStr = costParts.length > 0 ? `  ${chalk.gray(costParts.join(', '))}` : '';
+
+      const statusIcon = ps.failed > 0 ? chalk.red('✗') : ps.done === ps.total ? chalk.green('✓') : chalk.yellow('●');
+      console.log(
+        `  ${statusIcon} ${chalk.bold(pad(epic.id, 10))} ${epicColor(pad(pct + '%', 5))} ${epicColor(bar)}  ${ps.done}/${ps.total}${costStr}  ${chalk.gray(epic.title)}`,
+      );
+    }
   }
 
   // Per-agent workload
@@ -1641,11 +1692,18 @@ async function runStats(
     );
   }
 
-  // Cost estimate
-  console.log(
-    chalk.bold(`\nEstimated remaining cost: `) +
-      `$${estimatedCost.toFixed(2)} (${remainingTasks} tasks × $${avgBudget.toFixed(2)} avg)`,
-  );
+  // Cost summary
+  if (totalActualCost > 0) {
+    console.log(
+      chalk.bold(`\nActual cost: `) + `$${totalActualCost.toFixed(2)}` +
+      (totalEstimatedCost > 0 ? ` / $${totalEstimatedCost.toFixed(2)} estimated` : ''),
+    );
+  } else {
+    console.log(
+      chalk.bold(`\nEstimated remaining cost: `) +
+        `$${estimatedCost.toFixed(2)} (${remainingTasks} tasks × $${avgBudget.toFixed(2)} avg)`,
+    );
+  }
   console.log('');
 }
 

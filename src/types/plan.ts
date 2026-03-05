@@ -90,6 +90,9 @@ export interface PlanTask {
 
   /** Last error message recorded when a transient failure occurred. */
   last_error?: string;
+
+  /** Set to true after a completion chat notification has been sent for this epic. */
+  completion_notified?: boolean;
 }
 
 export interface Plan {

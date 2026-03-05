@@ -25,6 +25,7 @@ import {
   getChildren,
   getAncestors,
   validateParentType,
+  notifyEpicCompletions,
 } from '../../src/core/plan.js';
 import type { Plan, PlanTask, TaskType } from '../../src/types/plan.js';
 import type { ChatMessage } from '../../src/types/config.js';
@@ -1033,6 +1034,75 @@ describe('plan', () => {
       const parent = makeTask({ id: 'parent-1' }); // no type
       const child = makeTask({ id: 'child-1', type: 'task' as TaskType });
       expect(validateParentType(parent, child)).toBe(true);
+    });
+  });
+
+  // ── notifyEpicCompletions ───────────────────────────────────────────
+
+  describe('notifyEpicCompletions', () => {
+    it('should append a STATUS message to chat when an epic is done', () => {
+      const chatPath = initChatFile(hivePath);
+      const epic = makeTask({ id: 'EP-01', type: 'epic' as TaskType, status: 'done', title: 'My Epic' });
+      const child1 = makeTask({ id: 'T-01', parent: 'EP-01', status: 'done' });
+      const child2 = makeTask({ id: 'T-02', parent: 'EP-01', status: 'done' });
+      const plan = makePlan([epic, child1, child2]);
+
+      const notified = notifyEpicCompletions(plan, chatPath);
+
+      expect(notified).toEqual(['EP-01']);
+      expect(epic.completion_notified).toBe(true);
+      const messages = readMessages(chatPath);
+      const statusMsg = messages.find((m) => m.type === 'STATUS' && m.body.includes('EP-01'));
+      expect(statusMsg).toBeDefined();
+      expect(statusMsg?.body).toContain('2/2');
+    });
+
+    it('should not notify again if already notified', () => {
+      const chatPath = initChatFile(hivePath);
+      const epic = makeTask({ id: 'EP-02', type: 'epic' as TaskType, status: 'done', completion_notified: true });
+      const child = makeTask({ id: 'T-03', parent: 'EP-02', status: 'done' });
+      const plan = makePlan([epic, child]);
+
+      const notified = notifyEpicCompletions(plan, chatPath);
+
+      expect(notified).toHaveLength(0);
+      const messages = readMessages(chatPath);
+      expect(messages.filter((m) => m.body.includes('EP-02'))).toHaveLength(0);
+    });
+
+    it('should not notify if epic is not done', () => {
+      const chatPath = initChatFile(hivePath);
+      const epic = makeTask({ id: 'EP-03', type: 'epic' as TaskType, status: 'running' });
+      const child1 = makeTask({ id: 'T-04', parent: 'EP-03', status: 'done' });
+      const child2 = makeTask({ id: 'T-05', parent: 'EP-03', status: 'running' });
+      const plan = makePlan([epic, child1, child2]);
+
+      const notified = notifyEpicCompletions(plan, chatPath);
+
+      expect(notified).toHaveLength(0);
+    });
+
+    it('should include cost in message when children have actual_cost', () => {
+      const chatPath = initChatFile(hivePath);
+      const epic = makeTask({ id: 'EP-04', type: 'epic' as TaskType, status: 'done' });
+      const child1 = makeTask({ id: 'T-06', parent: 'EP-04', status: 'done', actual_cost: 0.5 });
+      const child2 = makeTask({ id: 'T-07', parent: 'EP-04', status: 'done', actual_cost: 0.3 });
+      const plan = makePlan([epic, child1, child2]);
+
+      notifyEpicCompletions(plan, chatPath);
+
+      const messages = readMessages(chatPath);
+      const statusMsg = messages.find((m) => m.body.includes('EP-04'));
+      expect(statusMsg?.body).toContain('$0.80');
+    });
+
+    it('should not notify epics with no children', () => {
+      const chatPath = initChatFile(hivePath);
+      const epic = makeTask({ id: 'EP-05', type: 'epic' as TaskType, status: 'done' });
+      const plan = makePlan([epic]);
+
+      const notified = notifyEpicCompletions(plan, chatPath);
+      expect(notified).toHaveLength(0);
     });
   });
 });

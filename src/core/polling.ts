@@ -4,7 +4,7 @@ import { acquireLock, releaseLock, getCheckpoint, setCheckpoint, updateHeartbeat
 import { checkDailyBudget, recordSpending, logTaskCost } from './budget.js';
 import { findRequests, appendMessage, getChatLineCount, resolveChatPath, readMessagesSince } from './chat.js';
 import { syncWorktree, rebaseAndPush } from './worktree.js';
-import { loadPlan, savePlan, reconcilePlanWithChat, computeReadyTasks, promoteReadyTasks, resetTaskForRetry, DEFAULT_MAX_RETRIES } from './plan.js';
+import { loadPlan, savePlan, reconcilePlanWithChat, computeReadyTasks, promoteReadyTasks, resetTaskForRetry, DEFAULT_MAX_RETRIES, notifyEpicCompletions } from './plan.js';
 import { notify } from './notify.js';
 import { rotateTranscripts } from './transcripts.js';
 import type { ResolvedAgentConfig, HiveConfig } from '../types/config.js';
@@ -154,8 +154,12 @@ export class AgentLoop {
     if (plan && newMessages.length > 0) {
       const updates = reconcilePlanWithChat(plan, newMessages);
       if (updates.length > 0) {
+        const epicsDone = notifyEpicCompletions(plan, this.chatFilePath);
         savePlan(this.hivePath, plan);
         this.log(`Plan updated: ${updates.map((u) => `${u.taskId}→${u.newStatus}`).join(', ')}`);
+        if (epicsDone.length > 0) {
+          this.log(`Epic completions notified: ${epicsDone.join(', ')}`);
+        }
       }
     }
 
@@ -262,7 +266,11 @@ export class AgentLoop {
           planTask.updated_at = completedAt;
           planTask.completed_at = completedAt;
           planTask.resolution = taskBody;
+          const epicsDoneInline = notifyEpicCompletions(plan, this.chatFilePath);
           savePlan(this.hivePath, plan);
+          if (epicsDoneInline.length > 0) {
+            this.log(`Epic completions notified: ${epicsDoneInline.join(', ')}`);
+          }
 
           const pushResult = await rebaseAndPush(this.agent.worktreePath);
           if (!pushResult.success) {

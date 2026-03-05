@@ -634,6 +634,54 @@ export function dispatchTask(
 
 export { PRIORITY_ORDER };
 
+// ── Epic completion notifications ────────────────────────────────────
+
+/**
+ * Check all epics in the plan. For any epic that is 'done' and has not yet
+ * sent a completion notification, append a STATUS message to the chat file
+ * and mark the epic so it won't notify again.
+ *
+ * Returns the list of epic IDs that were newly notified so the caller knows
+ * to re-save the plan.
+ */
+export function notifyEpicCompletions(
+  plan: Plan,
+  chatFilePath: string,
+): string[] {
+  const notified: string[] = [];
+
+  for (const task of plan.tasks) {
+    if (task.type !== 'epic') continue;
+    if (task.status !== 'done') continue;
+    if (task.completion_notified) continue;
+
+    const children = getChildTasks(plan, task.id);
+    if (children.length === 0) continue; // no children — skip untracked epics
+
+    const doneCount = children.filter((c) => c.status === 'done').length;
+    const totalCount = children.length;
+
+    // Aggregate costs
+    const actualCost = children.reduce((sum, c) => sum + (c.actual_cost ?? 0), 0);
+    const estimatedCost = children.reduce((sum, c) => sum + (c.estimated_cost ?? 0), 0);
+
+    const costStr =
+      actualCost > 0
+        ? ` Cost: $${actualCost.toFixed(2)} actual`
+        : estimatedCost > 0
+          ? ` Est. cost: $${estimatedCost.toFixed(2)}`
+          : '';
+
+    const body = `Epic [${task.id}] "${task.title}" completed. ${doneCount}/${totalCount} tasks done.${costStr}`;
+    appendMessage(chatFilePath, 'HIVE', 'STATUS', body);
+
+    task.completion_notified = true;
+    notified.push(task.id);
+  }
+
+  return notified;
+}
+
 // ── Retry policy ─────────────────────────────────────────────────────
 
 /**
