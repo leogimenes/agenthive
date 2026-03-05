@@ -4,6 +4,7 @@ import {
   mkdirSync,
   rmSync,
   writeFileSync,
+  existsSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -13,6 +14,7 @@ import {
   parseTranscript,
   getToolIcon,
   formatDuration,
+  rotateTranscriptDir,
 } from '../../src/core/transcripts.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -395,6 +397,123 @@ describe('transcripts', () => {
 
       const events = parseTranscript(file);
       expect(events).toHaveLength(0);
+    });
+  });
+
+  // ── rotateTranscriptDir ────────────────────────────────────────────
+
+  describe('rotateTranscriptDir', () => {
+    /**
+     * Helper: create a fake session JSONL file with a given ISO timestamp
+     * so listSessions() can sort by startTime.
+     */
+    function createSession(dir: string, id: string, timestamp: string): string {
+      const filePath = join(dir, `${id}.jsonl`);
+      writeFileSync(
+        filePath,
+        makeEntry('user', timestamp, [{ type: 'text', text: 'hello' }]),
+      );
+      return filePath;
+    }
+
+    it('should return 0 deleted when directory does not exist', () => {
+      const result = rotateTranscriptDir('/nonexistent/dir', 20);
+      expect(result.deleted).toBe(0);
+    });
+
+    it('should return 0 deleted when sessions count is at or below retention limit', () => {
+      // Create 3 sessions, retention = 5
+      createSession(tmpDir, 'session-1', '2026-01-01T10:00:00Z');
+      createSession(tmpDir, 'session-2', '2026-01-02T10:00:00Z');
+      createSession(tmpDir, 'session-3', '2026-01-03T10:00:00Z');
+
+      const result = rotateTranscriptDir(tmpDir, 5);
+      expect(result.deleted).toBe(0);
+
+      // All files should still exist
+      expect(existsSync(join(tmpDir, 'session-1.jsonl'))).toBe(true);
+      expect(existsSync(join(tmpDir, 'session-2.jsonl'))).toBe(true);
+      expect(existsSync(join(tmpDir, 'session-3.jsonl'))).toBe(true);
+    });
+
+    it('should return 0 deleted when sessions count exactly equals retention limit', () => {
+      createSession(tmpDir, 'session-a', '2026-01-01T10:00:00Z');
+      createSession(tmpDir, 'session-b', '2026-01-02T10:00:00Z');
+
+      const result = rotateTranscriptDir(tmpDir, 2);
+      expect(result.deleted).toBe(0);
+    });
+
+    it('should delete oldest sessions beyond the retention limit', () => {
+      // Create 5 sessions with different timestamps (oldest to newest)
+      createSession(tmpDir, 'oldest-1', '2026-01-01T10:00:00Z');
+      createSession(tmpDir, 'older-2',  '2026-01-02T10:00:00Z');
+      createSession(tmpDir, 'middle-3', '2026-01-03T10:00:00Z');
+      createSession(tmpDir, 'newer-4',  '2026-01-04T10:00:00Z');
+      createSession(tmpDir, 'newest-5', '2026-01-05T10:00:00Z');
+
+      // Keep only 3 newest
+      const result = rotateTranscriptDir(tmpDir, 3);
+      expect(result.deleted).toBe(2);
+
+      // Newest 3 should survive
+      expect(existsSync(join(tmpDir, 'newest-5.jsonl'))).toBe(true);
+      expect(existsSync(join(tmpDir, 'newer-4.jsonl'))).toBe(true);
+      expect(existsSync(join(tmpDir, 'middle-3.jsonl'))).toBe(true);
+
+      // Oldest 2 should be gone
+      expect(existsSync(join(tmpDir, 'older-2.jsonl'))).toBe(false);
+      expect(existsSync(join(tmpDir, 'oldest-1.jsonl'))).toBe(false);
+    });
+
+    it('should also delete tool-results subdirectory for rotated sessions', () => {
+      createSession(tmpDir, 'old-session', '2026-01-01T10:00:00Z');
+      createSession(tmpDir, 'new-session', '2026-01-02T10:00:00Z');
+
+      // Create matching tool-results dirs
+      const toolResultsDir = join(tmpDir, 'tool-results');
+      mkdirSync(join(toolResultsDir, 'old-session'), { recursive: true });
+      mkdirSync(join(toolResultsDir, 'new-session'), { recursive: true });
+
+      // Keep only 1 newest
+      const result = rotateTranscriptDir(tmpDir, 1);
+      expect(result.deleted).toBe(1);
+
+      // old-session jsonl and tool-results dir should be gone
+      expect(existsSync(join(tmpDir, 'old-session.jsonl'))).toBe(false);
+      expect(existsSync(join(toolResultsDir, 'old-session'))).toBe(false);
+
+      // new-session should be intact
+      expect(existsSync(join(tmpDir, 'new-session.jsonl'))).toBe(true);
+      expect(existsSync(join(toolResultsDir, 'new-session'))).toBe(true);
+    });
+
+    it('should not fail when tool-results dir does not exist for a session', () => {
+      createSession(tmpDir, 'session-no-tools', '2026-01-01T10:00:00Z');
+      createSession(tmpDir, 'session-with-tools', '2026-01-02T10:00:00Z');
+
+      // No tool-results directory created
+      const result = rotateTranscriptDir(tmpDir, 1);
+      expect(result.deleted).toBe(1);
+      expect(existsSync(join(tmpDir, 'session-no-tools.jsonl'))).toBe(false);
+    });
+
+    it('should keep exactly retention count of sessions', () => {
+      for (let i = 1; i <= 25; i++) {
+        const ts = `2026-01-${String(i).padStart(2, '0')}T10:00:00Z`;
+        createSession(tmpDir, `session-${i}`, ts);
+      }
+
+      const result = rotateTranscriptDir(tmpDir, 20);
+      expect(result.deleted).toBe(5);
+
+      // Sessions 6-25 (newest 20) survive, sessions 1-5 deleted
+      for (let i = 6; i <= 25; i++) {
+        expect(existsSync(join(tmpDir, `session-${i}.jsonl`))).toBe(true);
+      }
+      for (let i = 1; i <= 5; i++) {
+        expect(existsSync(join(tmpDir, `session-${i}.jsonl`))).toBe(false);
+      }
     });
   });
 });

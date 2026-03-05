@@ -44,6 +44,9 @@ export interface DefaultsConfig {
 
   /** Message types that trigger notifications. Default: ["DONE", "BLOCKER"]. */
   notify_on: string[];
+
+  /** Number of transcript sessions to keep per agent. Older sessions are deleted. Default: 20. */
+  transcript_retention: number;
 }
 
 export interface AgentConfig {
