@@ -3,7 +3,7 @@ import { Command } from 'commander';
 // ── All top-level commands (excluding hidden _loop) ─────────────────
 const COMMANDS = [
   'init', 'launch', 'kill', 'status', 'dispatch', 'tail',
-  'config', 'ui', 'plan', 'templates', 'merge', 'completion',
+  'config', 'ui', 'plan', 'templates', 'merge', 'deliver', 'completion',
   'add', 'remove', 'logs', 'cost', 'resume',
 ];
 
@@ -195,6 +195,7 @@ _hive() {
     'logs:Show Claude Code transcript events'
     'cost:Show per-agent and aggregate cost summary'
     'resume:Detect orphaned state and relaunch dead agents'
+    'deliver:Orchestrate delivery of a completed epic'
   )
 
   global_flags=(
@@ -355,6 +356,13 @@ _hive() {
         '--force[Restart even running agents]' \\
         '--dry-run[Show recovery plan without executing]'
       ;;
+    deliver)
+      _arguments \\
+        '--dry-run[Show what would be done without making changes]' \\
+        '--force[Skip definition-of-done checks]' \\
+        '--strategy[Override delivery strategy]:strategy:(auto-merge pull-request manual)' \\
+        '1:epic-id:'
+      ;;
   esac
 }
 
@@ -375,7 +383,7 @@ function fishCompletion(): string {
     '# Detect if a subcommand has been given',
     'function __hive_no_subcommand',
     '  set -l cmd (commandline -opc)',
-    '  for c in init launch kill status dispatch tail config ui plan templates merge completion add remove logs cost resume',
+    '  for c in init launch kill status dispatch tail config ui plan templates merge deliver completion add remove logs cost resume',
     '    if contains -- $c $cmd',
     '      return 1',
     '    end',
@@ -415,6 +423,7 @@ function fishCompletion(): string {
     logs: 'Show Claude Code transcript events',
     cost: 'Show per-agent and aggregate cost summary',
     resume: 'Detect orphaned state and relaunch dead agents',
+    deliver: 'Orchestrate delivery of a completed epic',
   };
 
   for (const [cmd, desc] of Object.entries(commandDescs)) {
@@ -526,6 +535,12 @@ function fishCompletion(): string {
   lines.push('complete -c hive -n "__hive_using_subcommand resume" -l yes -d "Skip confirmation prompt"');
   lines.push('complete -c hive -n "__hive_using_subcommand resume" -l force -d "Restart even running agents"');
   lines.push('complete -c hive -n "__hive_using_subcommand resume" -l dry-run -d "Show recovery plan without executing"');
+
+  lines.push('');
+  lines.push('# deliver options');
+  lines.push('complete -c hive -n "__hive_using_subcommand deliver" -l dry-run -d "Show what would be done"');
+  lines.push('complete -c hive -n "__hive_using_subcommand deliver" -l force -d "Skip DoD checks"');
+  lines.push('complete -c hive -n "__hive_using_subcommand deliver" -l strategy -d "Override delivery strategy" -a "auto-merge pull-request manual"');
 
   lines.push('');
 
