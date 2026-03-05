@@ -21,6 +21,9 @@ export interface HiveConfig {
 
   /** Templates configuration. */
   templates: TemplatesConfig;
+
+  /** Delivery configuration. */
+  delivery: DeliveryConfig;
 }
 
 export interface DefaultsConfig {
@@ -106,6 +109,23 @@ export interface HooksConfig {
 export interface TemplatesConfig {
   /** Override the project-local template directory path (relative to hive root). */
   dir?: string;
+}
+
+export interface DeliveryConfig {
+  /** Delivery strategy. Default: 'manual'. */
+  strategy: 'auto-merge' | 'pull-request' | 'manual';
+
+  /** Require CI to pass before delivery. Default: true. */
+  require_ci: boolean;
+
+  /** Base branch for delivery. Default: 'main'. */
+  base_branch: string;
+
+  /** Automatically create a release after delivery. Default: false. */
+  auto_release: boolean;
+
+  /** Conditions that define task completion. Default: ['all_tasks_done']. */
+  definition_of_done: string[];
 }
 
 

@@ -9,6 +9,7 @@ import type {
   ChatConfig,
   HooksConfig,
   TemplatesConfig,
+  DeliveryConfig,
 } from '../types/config.js';
 
 // ── Errors ──────────────────────────────────────────────────────────
@@ -194,7 +195,39 @@ function validateAndNormalize(
       typeof rawTemplates.dir === 'string' ? rawTemplates.dir : undefined,
   };
 
-  return { session, defaults, agents, chat, hooks, templates };
+  // Delivery
+  const rawDelivery = (raw.delivery ?? {}) as Record<string, unknown>;
+  const strategy = rawDelivery.strategy;
+  const validStrategies = ['auto-merge', 'pull-request', 'manual'] as const;
+  if (
+    strategy !== undefined &&
+    !validStrategies.includes(strategy as (typeof validStrategies)[number])
+  ) {
+    throw new HiveConfigValidationError(
+      `delivery.strategy must be one of: ${validStrategies.join(', ')}.`,
+    );
+  }
+  const delivery: DeliveryConfig = {
+    strategy: validStrategies.includes(strategy as (typeof validStrategies)[number])
+      ? (strategy as DeliveryConfig['strategy'])
+      : 'manual',
+    require_ci:
+      typeof rawDelivery.require_ci === 'boolean'
+        ? rawDelivery.require_ci
+        : true,
+    base_branch:
+      typeof rawDelivery.base_branch === 'string'
+        ? rawDelivery.base_branch
+        : 'main',
+    auto_release:
+      typeof rawDelivery.auto_release === 'boolean'
+        ? rawDelivery.auto_release
+        : false,
+    definition_of_done:
+      toStringArray(rawDelivery.definition_of_done) ?? ['all_tasks_done'],
+  };
+
+  return { session, defaults, agents, chat, hooks, templates, delivery };
 }
 
 // ── Resolution ──────────────────────────────────────────────────────

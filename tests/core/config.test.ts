@@ -180,6 +180,51 @@ describe('config', () => {
       expect(config.hooks.coordination).toEqual(['check-chat']);
       expect(config.hooks.custom).toEqual(['my-hook.sh']);
     });
+
+    it('should apply delivery defaults when delivery section is absent', () => {
+      writeConfig(minimalConfig);
+      const config = loadConfig(testDir);
+      expect(config.delivery.strategy).toBe('manual');
+      expect(config.delivery.require_ci).toBe(true);
+      expect(config.delivery.base_branch).toBe('main');
+      expect(config.delivery.auto_release).toBe(false);
+      expect(config.delivery.definition_of_done).toEqual(['all_tasks_done']);
+    });
+
+    it('should load explicit delivery config', () => {
+      writeConfig({
+        ...minimalConfig,
+        delivery: {
+          strategy: 'pull-request',
+          require_ci: false,
+          base_branch: 'develop',
+          auto_release: true,
+          definition_of_done: ['all_tasks_done', 'tests_pass'],
+        },
+      });
+      const config = loadConfig(testDir);
+      expect(config.delivery.strategy).toBe('pull-request');
+      expect(config.delivery.require_ci).toBe(false);
+      expect(config.delivery.base_branch).toBe('develop');
+      expect(config.delivery.auto_release).toBe(true);
+      expect(config.delivery.definition_of_done).toEqual([
+        'all_tasks_done',
+        'tests_pass',
+      ]);
+    });
+
+    it('should accept all valid delivery strategies', () => {
+      for (const strategy of ['auto-merge', 'pull-request', 'manual'] as const) {
+        writeConfig({ ...minimalConfig, delivery: { strategy } });
+        const config = loadConfig(testDir);
+        expect(config.delivery.strategy).toBe(strategy);
+      }
+    });
+
+    it('should throw on invalid delivery strategy', () => {
+      writeConfig({ ...minimalConfig, delivery: { strategy: 'invalid' } });
+      expect(() => loadConfig(testDir)).toThrow(HiveConfigValidationError);
+    });
   });
 
   // ── resolveAgent ──────────────────────────────────────────────────
