@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import chalk from 'chalk';
 import { parseDocument, stringify as toYaml } from 'yaml';
 import { loadConfig, resolveHiveRoot, resolveHivePath } from '../core/config.js';
-import { createWorktree, removeWorktree } from '../core/worktree.js';
+import { createWorktree, removeWorktree, syncAgentFilesToWorktree } from '../core/worktree.js';
 import { getLockStatus, releaseLock } from '../core/lock.js';
 import { tmux, tmuxSessionExists } from '../core/tmux.js';
 import type { HiveConfig } from '../types/config.js';
@@ -110,6 +110,10 @@ async function runAdd(
     // 2. Register hooks in worktree
     registerHooksInWorktree(worktreePath, hivePath, config.hooks);
     console.log(`  ${chalk.green('✓')} Hooks registered in worktree`);
+
+    // 2b. Sync agent files (.claude/agents/, CLAUDE.md) into worktree
+    syncAgentFilesToWorktree(hiveRoot, worktreePath);
+    console.log(`  ${chalk.green('✓')} Agent files synced to worktree`);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(chalk.red(`Error creating worktree: ${msg}`));

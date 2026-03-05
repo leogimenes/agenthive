@@ -4,7 +4,7 @@ import { join, resolve, basename } from 'node:path';
 import { checkbox, confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
-import { createWorktree, isGitRepo, getMainBranch } from '../core/worktree.js';
+import { createWorktree, isGitRepo, getMainBranch, syncAgentFilesToWorktree } from '../core/worktree.js';
 import { initChatFile } from '../core/chat.js';
 import { EMBEDDED_HOOKS } from '../hooks/embedded.js';
 import { EMBEDDED_TEMPLATES } from '../templates/embedded.js';
@@ -171,6 +171,12 @@ async function runInit(
 
   // 9. Install agent prompt templates
   const installedTemplates = await installTemplates(cwd, selectedAgents, config, opts);
+
+  // 9b. Sync agent files (.claude/agents/, CLAUDE.md) into each worktree
+  console.log(chalk.gray('\nSyncing agent files to worktrees...'));
+  for (const worktreePath of createdWorktrees) {
+    syncAgentFilesToWorktree(cwd, worktreePath);
+  }
 
   // 10. Update .gitignore
   updateGitignore(cwd);

@@ -96,6 +96,34 @@ describe('watchdog', () => {
       const health = checkAgentHealth(hivePath, 'sre', 60);
       expect(health.checkpoint).toBe(42);
     });
+
+    it('should return stuck when heartbeat is fresh but checkpoint has not advanced', () => {
+      acquireLock(hivePath, 'sre');
+      setCheckpoint(hivePath, 'sre', 10);
+
+      // Fresh heartbeat (10s ago, well within threshold of 180s)
+      const recentTime = new Date(Date.now() - 10 * 1000).toISOString();
+      const lockFile = join(hivePath, 'state', 'sre.lock');
+      writeFileSync(lockFile, `${process.pid}\n${recentTime}`, 'utf-8');
+
+      // Previous checkpoint was also 10 — no progress
+      const health = checkAgentHealth(hivePath, 'sre', 60, 10);
+      expect(health.state).toBe('stuck');
+      expect(health.checkpoint).toBe(10);
+    });
+
+    it('should return healthy when heartbeat is fresh and checkpoint has advanced', () => {
+      acquireLock(hivePath, 'sre');
+      setCheckpoint(hivePath, 'sre', 20);
+
+      const recentTime = new Date(Date.now() - 10 * 1000).toISOString();
+      const lockFile = join(hivePath, 'state', 'sre.lock');
+      writeFileSync(lockFile, `${process.pid}\n${recentTime}`, 'utf-8');
+
+      // Previous checkpoint was 10, now 20 — progress made
+      const health = checkAgentHealth(hivePath, 'sre', 60, 10);
+      expect(health.state).toBe('healthy');
+    });
   });
 
   // ── updateHeartbeat ───────────────────────────────────────────────

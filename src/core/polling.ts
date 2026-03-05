@@ -125,18 +125,8 @@ export class AgentLoop {
       return;
     }
 
-    // 1. Sync worktree (fetch + rebase)
-    const syncResult = await syncWorktree(this.agent.worktreePath);
-    if (!syncResult.success) {
-      this.log(`WARN: git sync failed: ${truncate(syncResult.error ?? '', 120)}`);
-      await sleep(this.agent.poll * 1000);
-      return;
-    }
-
-    // 2. Check chat for work
+    // 1. Check chat for work FIRST (before git sync — chat is always accessible)
     const checkpoint = getCheckpoint(this.hivePath, this.agent.name);
-
-    // 2a. Reconcile plan with new chat messages (if plan exists)
     const newMessages = readMessagesSince(this.chatFilePath, checkpoint);
 
     // Fire notifications for notable messages from other agents
@@ -150,6 +140,7 @@ export class AgentLoop {
       }
     }
 
+    // Reconcile plan with new chat messages (if plan exists)
     const plan = loadPlan(this.hivePath);
     if (plan && newMessages.length > 0) {
       const updates = reconcilePlanWithChat(plan, newMessages);
@@ -165,14 +156,16 @@ export class AgentLoop {
       checkpoint,
     );
 
-    // Advance checkpoint regardless
     const currentLines = getChatLineCount(this.chatFilePath);
-    setCheckpoint(this.hivePath, this.agent.name, currentLines);
 
+    // If there are requests, attempt to process them
     if (requests.length > 0) {
-      // Take the last request (most recent)
-      const task = requests[requests.length - 1];
+      const task = requests[requests.length - 1]; // most recent
       this.log(`Found task: ${truncate(task.body, 120)}`);
+      this.consecutiveIdle = 0;
+
+      // 2. Sync worktree before running the task
+      await this.syncWorktreeWithRecovery();
 
       const result = await this.runTask(task.body);
 
@@ -180,6 +173,9 @@ export class AgentLoop {
         this.consecutiveFails = 0;
         recordSpending(this.hivePath, this.agent.name, result.cost);
         logTaskCost(this.hivePath, this.agent.name, task.body, result.cost, true);
+
+        // Advance checkpoint AFTER successful processing (BUG 2 fix)
+        setCheckpoint(this.hivePath, this.agent.name, currentLines);
 
         // Rebase and push after successful task
         const pushResult = await rebaseAndPush(this.agent.worktreePath);
@@ -200,6 +196,17 @@ export class AgentLoop {
         this.consecutiveFails++;
         recordSpending(this.hivePath, this.agent.name, result.cost);
         logTaskCost(this.hivePath, this.agent.name, task.body, result.cost, false);
+
+        // Post BLOCKER to chat so other agents and the plan have visibility (BUG 4 fix)
+        appendMessage(
+          this.chatFilePath,
+          this.agent.chatRole,
+          'BLOCKER',
+          `Task failed (${this.consecutiveFails} consecutive failures): ${truncate(task.body, 200)}`,
+        );
+
+        // Advance checkpoint — we've acknowledged the failure publicly
+        setCheckpoint(this.hivePath, this.agent.name, getChatLineCount(this.chatFilePath));
 
         if (this.consecutiveFails >= MAX_CONSECUTIVE_FAILS) {
           const power = this.consecutiveFails - MAX_CONSECUTIVE_FAILS;
@@ -226,6 +233,9 @@ export class AgentLoop {
       return;
     }
 
+    // No direct requests — advance checkpoint past non-request messages
+    setCheckpoint(this.hivePath, this.agent.name, currentLines);
+
     // 3. Check plan for ready tasks targeting this agent (auto-dispatch)
     if (plan) {
       promoteReadyTasks(plan);
@@ -236,8 +246,10 @@ export class AgentLoop {
       if (readyTasks.length > 0) {
         const planTask = readyTasks[0]; // highest priority
         const now = new Date().toISOString();
-        planTask.status = 'dispatched';
-        planTask.dispatched_at = now;
+
+        // Transition to running (BUG 5 fix)
+        planTask.status = 'running';
+        planTask.dispatched_at = planTask.dispatched_at ?? now;
         planTask.updated_at = now;
         savePlan(this.hivePath, plan);
 
@@ -246,6 +258,9 @@ export class AgentLoop {
           : '';
         const taskBody = `[${planTask.id}] ${planTask.title}${desc}`;
         this.log(`Plan task: ${truncate(taskBody, 120)}`);
+
+        // Sync worktree before running the task
+        await this.syncWorktreeWithRecovery();
 
         const planResult = await this.runTask(taskBody);
         if (planResult.success) {
@@ -276,9 +291,6 @@ export class AgentLoop {
           logTaskCost(this.hivePath, this.agent.name, taskBody, planResult.cost, false);
 
           // BUG 9 fix: Retry policy for transient failures.
-          // Instead of leaving the task stuck in 'dispatched' forever, reset it
-          // for retry (up to max_retries). Only mark permanently failed after all
-          // retries are exhausted.
           const outcome = resetTaskForRetry(planTask, planResult.error);
           if (outcome === 'failed') {
             const maxRetries = planTask.max_retries ?? DEFAULT_MAX_RETRIES;
@@ -308,6 +320,12 @@ export class AgentLoop {
     this.consecutiveIdle++;
     this.consecutiveFails = 0;
 
+    // Sync worktree during idle so it's ready for next task
+    const syncResult = await syncWorktree(this.agent.worktreePath);
+    if (!syncResult.success) {
+      this.log(`WARN: idle git sync failed: ${truncate(syncResult.error ?? '', 120)}`);
+    }
+
     if (this.consecutiveIdle % 10 === 0) {
       this.log(
         `Idle for ${this.consecutiveIdle * this.agent.poll}s (${this.consecutiveIdle} cycles)`,
@@ -315,6 +333,83 @@ export class AgentLoop {
     }
 
     await sleep(this.agent.poll * 1000);
+  }
+
+  // ── Worktree sync with recovery ─────────────────────────────────
+
+  /**
+   * Sync the worktree, recovering from dirty state if needed.
+   * BUG 3 fix: dirty worktrees should not block autonomous development.
+   *
+   * Recovery strategy:
+   * 1. Try normal sync (fetch + rebase)
+   * 2. If that fails, stash changes and retry
+   * 3. If still failing, commit WIP changes and retry
+   * 4. If all else fails, log warning and continue (agent can still work)
+   */
+  private async syncWorktreeWithRecovery(): Promise<void> {
+    // First attempt: normal sync
+    const result = await syncWorktree(this.agent.worktreePath);
+    if (result.success) return;
+
+    this.log(`WARN: git sync failed, attempting recovery: ${truncate(result.error ?? '', 120)}`);
+
+    // Second attempt: stash dirty changes, sync, then pop
+    try {
+      const { execFile } = await import('node:child_process');
+      const { promisify } = await import('node:util');
+      const exec = promisify(execFile);
+
+      // Check if there are dirty changes
+      const { stdout: status } = await exec(
+        'git', ['status', '--porcelain'],
+        { cwd: this.agent.worktreePath },
+      );
+
+      if (status.trim().length > 0) {
+        // Stash everything including untracked files
+        await exec(
+          'git', ['stash', 'push', '-u', '-m', `hive-auto-stash-${Date.now()}`],
+          { cwd: this.agent.worktreePath },
+        );
+        this.log('Stashed dirty changes for sync');
+
+        const retryResult = await syncWorktree(this.agent.worktreePath);
+
+        // Pop stash regardless of sync result
+        try {
+          await exec('git', ['stash', 'pop'], { cwd: this.agent.worktreePath });
+          this.log('Restored stashed changes');
+        } catch {
+          this.log('WARN: could not pop stash — changes saved in git stash list');
+        }
+
+        if (retryResult.success) return;
+      }
+
+      // Third attempt: commit WIP and sync
+      if (status.trim().length > 0) {
+        await exec(
+          'git', ['add', '-A'],
+          { cwd: this.agent.worktreePath },
+        );
+        await exec(
+          'git', ['commit', '-m', `wip: auto-commit by hive agent ${this.agent.name} for sync recovery`],
+          { cwd: this.agent.worktreePath },
+        );
+        this.log('Auto-committed WIP changes for sync');
+
+        const retryResult = await syncWorktree(this.agent.worktreePath);
+        if (retryResult.success) return;
+        this.log(`WARN: sync still failing after WIP commit: ${truncate(retryResult.error ?? '', 120)}`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log(`WARN: sync recovery failed: ${truncate(msg, 120)}`);
+    }
+
+    // Continue anyway — the agent can still work on its current branch state
+    this.log('Continuing with current worktree state despite sync failure');
   }
 
   // ── Task execution ──────────────────────────────────────────────
@@ -351,12 +446,15 @@ export class AgentLoop {
     args.push(prompt);
 
     return new Promise((resolve) => {
+      // Remove CLAUDECODE env var to prevent "nested session" error —
+      // hive agents are independent sessions, not nested ones.
+      const { CLAUDECODE, ...cleanEnv } = process.env;
       const child = spawn('claude', args, {
         cwd: this.agent.worktreePath,
         // Capture stdout for JSON cost data; keep stderr visible in tmux
         stdio: ['ignore', 'pipe', 'inherit'],
         env: {
-          ...process.env,
+          ...cleanEnv,
           HIVE_CHAT_FILE: this.chatFilePath,
           HIVE_AGENT_NAME: this.agent.name,
           HIVE_AGENT_ROLE: this.agent.chatRole,

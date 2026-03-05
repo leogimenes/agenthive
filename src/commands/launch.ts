@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import { loadConfig, resolveHiveRoot, resolveHivePath, resolveAllAgents } from '../core/config.js';
 import { getLockStatus } from '../core/lock.js';
 import { tmux, tmuxSessionExists, shellQuote } from '../core/tmux.js';
+import { syncAgentFilesToWorktree } from '../core/worktree.js';
 import type { ResolvedAgentConfig } from '../types/config.js';
 
 export function registerLaunchCommand(program: Command): void {
@@ -137,7 +138,14 @@ async function runLaunch(
   }
 
   // Find the hive CLI path — we invoke ourselves via `hive _loop <agent>`
-  const hiveBin = process.argv[1]; // path to our entry point
+  // Bun-compiled binaries have a virtual argv[1] (/$bunfs/...), so use execPath instead.
+  const isBunBinary = process.argv[1]?.startsWith('/$bunfs/');
+  const hiveBin = isBunBinary ? process.execPath : process.argv[1];
+
+  // Sync agent files to worktrees (in case .claude/agents/ was added after init)
+  for (const agent of selected) {
+    syncAgentFilesToWorktree(hiveRoot, agent.worktreePath);
+  }
 
   // Launch each agent in a tmux window
   let first = true;
@@ -261,6 +269,12 @@ function buildLoopCommand(
     return `${envPrefix}npx tsx ${q(hiveBin)} --cwd ${q(hiveRoot)} _loop ${q(agentName)}`;
   }
 
-  // Production: run the compiled JS directly
+  // Standalone binary (Bun compile): run directly, not via node
+  const isBinary = !hiveBin.endsWith('.js') && !hiveBin.endsWith('.mjs');
+  if (isBinary) {
+    return `${envPrefix}${q(hiveBin)} --cwd ${q(hiveRoot)} _loop ${q(agentName)}`;
+  }
+
+  // Production JS: run via node
   return `${envPrefix}node ${q(hiveBin)} --cwd ${q(hiveRoot)} _loop ${q(agentName)}`;
 }

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, symlinkSync, readlinkSync, lstatSync, rmSync, unlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { WorktreeInfo, RebaseResult } from '../types/config.js';
 
@@ -204,6 +204,76 @@ export async function rebaseAndPush(
     }
 
     return { success: false, conflictFiles, error: message };
+  }
+}
+
+// ── Agent file syncing ──────────────────────────────────────────────
+
+/**
+ * Symlink .claude/agents/ and CLAUDE.md from the main repo into a worktree.
+ *
+ * Agent definition files live in the main repo's .claude/agents/ but are
+ * typically untracked, so git worktrees don't get them. This function
+ * creates symlinks so `claude --agent <name>` can find the definitions
+ * when running from the worktree's cwd.
+ */
+export function syncAgentFilesToWorktree(
+  hiveRoot: string,
+  worktreePath: string,
+): void {
+  // Symlink .claude/agents/ directory
+  const mainAgentsDir = join(hiveRoot, '.claude', 'agents');
+  if (existsSync(mainAgentsDir)) {
+    const worktreeClaudeDir = join(worktreePath, '.claude');
+    mkdirSync(worktreeClaudeDir, { recursive: true });
+
+    const worktreeAgentsDir = join(worktreeClaudeDir, 'agents');
+    createSymlinkIfNeeded(mainAgentsDir, worktreeAgentsDir);
+  }
+
+  // Symlink CLAUDE.md
+  const mainClaudeMd = join(hiveRoot, 'CLAUDE.md');
+  if (existsSync(mainClaudeMd)) {
+    const worktreeClaudeMd = join(worktreePath, 'CLAUDE.md');
+    createSymlinkIfNeeded(mainClaudeMd, worktreeClaudeMd);
+  }
+}
+
+/**
+ * Create a symlink if it doesn't already exist (or exists but points elsewhere).
+ * If a regular file/directory already exists at linkPath, remove it first and
+ * replace with the symlink (worktrees may have real files from git checkout).
+ */
+function createSymlinkIfNeeded(target: string, linkPath: string): void {
+  if (existsSync(linkPath) || lstatExistsSafe(linkPath)) {
+    try {
+      const stat = lstatSync(linkPath);
+      if (stat.isSymbolicLink() && readlinkSync(linkPath) === target) {
+        return; // Already a correct symlink
+      }
+      // Exists but is not a correct symlink — remove and replace
+      if (stat.isDirectory()) {
+        rmSync(linkPath, { recursive: true, force: true });
+      } else {
+        unlinkSync(linkPath);
+      }
+    } catch {
+      // Can't inspect — try creating anyway
+    }
+  }
+
+  symlinkSync(target, linkPath);
+}
+
+/**
+ * Check if a path exists as a symlink (even if dangling).
+ */
+function lstatExistsSafe(p: string): boolean {
+  try {
+    lstatSync(p);
+    return true;
+  } catch {
+    return false;
   }
 }
 

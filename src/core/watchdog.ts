@@ -70,12 +70,12 @@ export function checkAgentHealth(
     };
   }
 
-  // If checkpoint hasn't advanced and we have a previous value to compare,
-  // and enough time has passed (threshold), the agent may be stuck
+  // Heartbeat is fresh (agent is alive and polling), but checkpoint hasn't
+  // advanced since our last check — the agent may be stuck in a long task
+  // or a loop that doesn't consume messages.
   if (
     previousCheckpoint !== undefined &&
-    previousCheckpoint === checkpoint &&
-    heartbeatAge > threshold
+    previousCheckpoint === checkpoint
   ) {
     return {
       state: 'stuck',

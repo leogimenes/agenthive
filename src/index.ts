@@ -65,4 +65,20 @@ registerLogsCommand(program);
 registerCostCommand(program);
 registerResumeCommand(program);
 
+// Catch Ctrl+C during interactive prompts — show clean message, no stack trace.
+function handlePromptExit(err: unknown): void {
+  if (err instanceof Error && err.name === 'ExitPromptError') {
+    console.log('\nInterrupted.');
+    process.exit(0);
+  }
+}
+process.on('uncaughtException', (err) => {
+  handlePromptExit(err);
+  throw err;            // Re-throw anything else so it still crashes loudly.
+});
+process.on('unhandledRejection', (err) => {
+  handlePromptExit(err);
+  throw err;
+});
+
 program.parse();
