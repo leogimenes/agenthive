@@ -46,15 +46,21 @@ vi.mock('../../src/core/plan.js', () => ({
   reconcilePlanWithChat: vi.fn().mockReturnValue([]),
   computeReadyTasks: vi.fn().mockReturnValue([]),
   promoteReadyTasks: vi.fn(),
+  resetTaskForRetry: vi.fn().mockReturnValue('retry'),
+  DEFAULT_MAX_RETRIES: 3,
 }));
 
 vi.mock('../../src/core/notify.js', () => ({
   notify: vi.fn(),
 }));
 
-// spawn mock — by default calls 'close' with exit code 0 via process.nextTick
+// spawn mock — by default emits 'close' with exit code 0 via process.nextTick
+// stdout emits no data (parseClaudeCost returns fallback = agent.budget)
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(() => ({
+    stdout: {
+      on: vi.fn(),
+    },
     on: vi.fn((event: string, cb: (arg: unknown) => void) => {
       if (event === 'close') process.nextTick(() => cb(0));
     }),
@@ -89,6 +95,7 @@ import {
   reconcilePlanWithChat,
   computeReadyTasks,
   promoteReadyTasks,
+  resetTaskForRetry,
 } from '../../src/core/plan.js';
 import { notify } from '../../src/core/notify.js';
 import { spawn } from 'node:child_process';
@@ -140,9 +147,16 @@ function callCycle(loop: AgentLoop): Promise<void> {
   return (loop as unknown as { cycle(): Promise<void> }).cycle();
 }
 
-/** Configure spawn mock to emit 'close' with the given exit code. */
-function mockSpawnExit(code: number): void {
+/** Configure spawn mock to emit 'close' with the given exit code. stdout emits no data. */
+function mockSpawnExit(code: number, stdoutData = ''): void {
   vi.mocked(spawn).mockReturnValue({
+    stdout: {
+      on: vi.fn((event: string, cb: (arg: unknown) => void) => {
+        if (event === 'data' && stdoutData) {
+          process.nextTick(() => cb(Buffer.from(stdoutData)));
+        }
+      }),
+    },
     on: vi.fn((event: string, cb: (arg: unknown) => void) => {
       if (event === 'close') process.nextTick(() => cb(code));
     }),
@@ -152,6 +166,9 @@ function mockSpawnExit(code: number): void {
 /** Configure spawn mock to emit 'error'. */
 function mockSpawnError(err: Error): void {
   vi.mocked(spawn).mockReturnValue({
+    stdout: {
+      on: vi.fn(),
+    },
     on: vi.fn((event: string, cb: (arg: unknown) => void) => {
       if (event === 'error') process.nextTick(() => cb(err));
     }),
@@ -885,7 +902,7 @@ describe('AgentLoop', () => {
       expect(vi.mocked(spawn)).toHaveBeenCalled();
     });
 
-    it('should set task status to dispatched before running', async () => {
+    it('should set task status to dispatched before running then done on success (BUG 8 fix)', async () => {
       const task = makePlanTask();
       const fakePlan = { tasks: [task], version: 1 };
       vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
@@ -896,8 +913,10 @@ describe('AgentLoop', () => {
       await vi.runAllTimersAsync();
       await promise;
 
-      expect(task.status).toBe('dispatched');
-      expect(vi.mocked(savePlan)).toHaveBeenCalled();
+      // BUG 8 fix: success path must set status='done' inline, not leave it as 'dispatched'
+      expect(task.status).toBe('done');
+      // savePlan must be called at least twice: once for 'dispatched', once for 'done'
+      expect(vi.mocked(savePlan).mock.calls.length).toBeGreaterThanOrEqual(2);
     });
 
     it('should not dispatch plan tasks targeting another agent', async () => {
@@ -1079,6 +1098,329 @@ describe('AgentLoop', () => {
       const args = vi.mocked(spawn).mock.calls[0][1] as string[];
       const prompt = args[args.length - 1];
       expect(prompt).toContain('QA');
+    });
+  });
+
+  // ── BUG 8 / BUG 10: plan task status set inline on success ───────────────
+
+  describe('cycle() — BUG 8 / BUG 10: plan task status set inline on success', () => {
+    function makePlanTask(overrides = {}) {
+      return {
+        id: 'task-1',
+        title: 'Write regression tests',
+        description: 'Cover all edge cases',
+        target: 'qa',
+        priority: 'p1' as const,
+        status: 'ready' as const,
+        depends_on: [] as string[],
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        ...overrides,
+      };
+    }
+
+    it('should set planTask.status to done after successful plan task execution', async () => {
+      const task = makePlanTask();
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      mockSpawnExit(0);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(task.status).toBe('done');
+    });
+
+    it('should set planTask.completed_at when plan task succeeds', async () => {
+      const task = makePlanTask();
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      mockSpawnExit(0);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(task.completed_at).toBeDefined();
+      expect(typeof task.completed_at).toBe('string');
+    });
+
+    it('should set planTask.updated_at when plan task succeeds', async () => {
+      const task = makePlanTask();
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      mockSpawnExit(0);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(task.updated_at).toBeDefined();
+    });
+
+    it('should set planTask.resolution when plan task succeeds', async () => {
+      const task = makePlanTask({ description: 'Cover all edge cases' });
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      mockSpawnExit(0);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(task.resolution).toBeDefined();
+      expect(typeof task.resolution).toBe('string');
+      expect(task.resolution!.length).toBeGreaterThan(0);
+    });
+
+    it('should call savePlan after successful plan task to persist done status', async () => {
+      const task = makePlanTask();
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      mockSpawnExit(0);
+
+      const saveCallsBefore = vi.mocked(savePlan).mock.calls.length;
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      // savePlan called at least once more after the task completed
+      expect(vi.mocked(savePlan).mock.calls.length).toBeGreaterThan(saveCallsBefore);
+    });
+
+    it('should NOT set planTask.status to done when plan task fails', async () => {
+      const task = makePlanTask();
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      mockSpawnExit(1); // failure
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(task.status).not.toBe('done');
+    });
+  });
+
+  // ── BUG 9: retry policy for transient plan task failures ─────────────────
+
+  describe('cycle() — BUG 9: retry policy for transient plan task failures', () => {
+    function makePlanTask(overrides = {}) {
+      return {
+        id: 'task-retry',
+        title: 'Retry test task',
+        description: 'Should retry on transient failure',
+        target: 'qa',
+        priority: 'p1' as const,
+        status: 'ready' as const,
+        depends_on: [] as string[],
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        ...overrides,
+      };
+    }
+
+    it('should call resetTaskForRetry when plan task fails', async () => {
+      const task = makePlanTask();
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      vi.mocked(resetTaskForRetry).mockReturnValue('retry');
+      mockSpawnExit(1); // failure
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(vi.mocked(resetTaskForRetry)).toHaveBeenCalledWith(task, expect.any(String));
+    });
+
+    it('should NOT call resetTaskForRetry when plan task succeeds', async () => {
+      const task = makePlanTask();
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      mockSpawnExit(0); // success
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(vi.mocked(resetTaskForRetry)).not.toHaveBeenCalled();
+    });
+
+    it('should call savePlan after retry reset to persist the updated retry_count', async () => {
+      const task = makePlanTask();
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      vi.mocked(resetTaskForRetry).mockReturnValue('retry');
+      mockSpawnExit(1);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(vi.mocked(savePlan)).toHaveBeenCalled();
+    });
+
+    it('should append BLOCKER message when resetTaskForRetry returns failed', async () => {
+      const task = makePlanTask({ id: 'task-perm-fail' });
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      vi.mocked(resetTaskForRetry).mockReturnValue('failed'); // exhausted retries
+      mockSpawnExit(1);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(vi.mocked(appendMessage)).toHaveBeenCalledWith(
+        expect.stringContaining('chat.md'),
+        'QA',
+        'BLOCKER',
+        expect.stringContaining('task-perm-fail'),
+      );
+    });
+
+    it('should NOT append BLOCKER message when resetTaskForRetry returns retry', async () => {
+      const task = makePlanTask();
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      vi.mocked(resetTaskForRetry).mockReturnValue('retry'); // retries remain
+      mockSpawnExit(1);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      // BLOCKER should NOT be appended when retries remain
+      const blockerCalls = vi.mocked(appendMessage).mock.calls.filter(
+        (call) => call[2] === 'BLOCKER',
+      );
+      expect(blockerCalls).toHaveLength(0);
+    });
+
+    it('should pass error string from runTask result to resetTaskForRetry', async () => {
+      const task = makePlanTask();
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      vi.mocked(resetTaskForRetry).mockReturnValue('retry');
+      mockSpawnExit(1); // non-zero exit → error = 'claude exited with code 1'
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      const call = vi.mocked(resetTaskForRetry).mock.calls[0];
+      expect(call[1]).toContain('exited with code 1');
+    });
+
+    it('should call resetTaskForRetry with spawn error message when spawn fails', async () => {
+      const task = makePlanTask();
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      vi.mocked(resetTaskForRetry).mockReturnValue('retry');
+      mockSpawnError(new Error('ENOENT: claude not found'));
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      const call = vi.mocked(resetTaskForRetry).mock.calls[0];
+      expect(call[1]).toContain('spawn failed');
+    });
+  });
+
+  // ── BE-10: Real cost tracking via parseClaudeCost ────────────────────────
+
+  describe('cycle() — BE-10: real cost tracking via --output-format json', () => {
+    const VALID_COST_JSON = JSON.stringify({
+      type: 'result',
+      total_cost_usd: 0.04252125,
+      session_id: 'test-session',
+    });
+
+    it('should include --output-format json in claude CLI args', async () => {
+      vi.mocked(findRequests).mockReturnValue([
+        { role: 'PM', type: 'REQUEST', body: 'task', lineNumber: 5 },
+      ]);
+      mockSpawnExit(0);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      const args = vi.mocked(spawn).mock.calls[0][1] as string[];
+      expect(args).toContain('--output-format');
+      const idx = args.indexOf('--output-format');
+      expect(args[idx + 1]).toBe('json');
+    });
+
+    it('should use parsed cost from stdout JSON in recordSpending', async () => {
+      vi.mocked(findRequests).mockReturnValue([
+        { role: 'PM', type: 'REQUEST', body: 'task', lineNumber: 5 },
+      ]);
+      mockSpawnExit(0, VALID_COST_JSON);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(vi.mocked(recordSpending)).toHaveBeenCalledWith(hivePath, 'qa', 0.04252125);
+    });
+
+    it('should fall back to config budget when stdout is empty', async () => {
+      vi.mocked(findRequests).mockReturnValue([
+        { role: 'PM', type: 'REQUEST', body: 'task', lineNumber: 5 },
+      ]);
+      mockSpawnExit(0, ''); // no stdout → parseClaudeCost returns fallback
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(vi.mocked(recordSpending)).toHaveBeenCalledWith(hivePath, 'qa', 2);
+    });
+
+    it('should fall back to config budget when stdout JSON lacks total_cost_usd', async () => {
+      vi.mocked(findRequests).mockReturnValue([
+        { role: 'PM', type: 'REQUEST', body: 'task', lineNumber: 5 },
+      ]);
+      const noCostJson = JSON.stringify({ type: 'result', subtype: 'success' });
+      mockSpawnExit(0, noCostJson);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(vi.mocked(recordSpending)).toHaveBeenCalledWith(hivePath, 'qa', 2);
+    });
+
+    it('should use real cost even on failed task when JSON is available', async () => {
+      vi.mocked(findRequests).mockReturnValue([
+        { role: 'PM', type: 'REQUEST', body: 'task', lineNumber: 5 },
+      ]);
+      const failCostJson = JSON.stringify({ type: 'result', is_error: true, total_cost_usd: 0.01 });
+      mockSpawnExit(1, failCostJson);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(vi.mocked(recordSpending)).toHaveBeenCalledWith(hivePath, 'qa', 0.01);
     });
   });
 });
