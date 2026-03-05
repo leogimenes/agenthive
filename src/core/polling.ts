@@ -245,6 +245,17 @@ export class AgentLoop {
           recordSpending(this.hivePath, this.agent.name, this.agent.budget);
           logTaskCost(this.hivePath, this.agent.name, taskBody, this.agent.budget, true);
 
+          // BUG 10 fix: Update plan task status INLINE in the success path.
+          // reconcilePlanWithChat is the backup for cross-agent DONE messages only.
+          // The agent's own checkpoint advances past its own DONE message, so
+          // reconcilePlanWithChat would never see it — primary update must happen here.
+          const completedAt = new Date().toISOString();
+          planTask.status = 'done';
+          planTask.updated_at = completedAt;
+          planTask.completed_at = completedAt;
+          planTask.resolution = taskBody;
+          savePlan(this.hivePath, plan);
+
           const pushResult = await rebaseAndPush(this.agent.worktreePath);
           if (!pushResult.success) {
             this.log(`WARN: push failed after task: ${truncate(pushResult.error ?? '', 120)}`);
