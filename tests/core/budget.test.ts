@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -158,6 +158,78 @@ describe('budget', () => {
     it('should return empty array when no log exists', () => {
       const entries = readCostLog(hivePath, 'sre');
       expect(entries).toEqual([]);
+    });
+  });
+
+  // ── date-rollover reset ───────────────────────────────────────────
+
+  describe('date-rollover reset', () => {
+    /**
+     * Helper: write a spend file with an mtime from N days ago.
+     */
+    function writeStaleSpendFile(agentName: string, amount: number, daysAgo: number): void {
+      const stateDir = join(hivePath, 'state');
+      mkdirSync(stateDir, { recursive: true });
+      const spendFile = join(stateDir, `${agentName}.daily-spend`);
+      writeFileSync(spendFile, String(amount), 'utf-8');
+      const staleTime = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+      utimesSync(spendFile, staleTime, staleTime);
+    }
+
+    it('should reset spend to 0 when file is from yesterday (checkDailyBudget)', () => {
+      writeStaleSpendFile('sre', 18, 1);
+      const result = checkDailyBudget(hivePath, 'sre', 20);
+      expect(result.spent).toBe(0);
+      expect(result.allowed).toBe(true);
+    });
+
+    it('should return 0 spend when file is from yesterday (getDailySpend)', () => {
+      writeStaleSpendFile('sre', 15, 1);
+      const result = getDailySpend(hivePath, 'sre');
+      expect(result.spent).toBe(0);
+    });
+
+    it('should reset and accumulate fresh spend after rollover (recordSpending)', () => {
+      writeStaleSpendFile('sre', 19, 1);
+      // First recordSpending call reads stale file → resets to 0, then adds 3
+      const total = recordSpending(hivePath, 'sre', 3);
+      expect(total).toBe(3);
+    });
+
+    it('should reset spend to 0 when file is from multiple days ago', () => {
+      writeStaleSpendFile('sre', 20, 5);
+      const result = checkDailyBudget(hivePath, 'sre', 20);
+      expect(result.spent).toBe(0);
+      expect(result.allowed).toBe(true);
+    });
+
+    it('should not reset spend when file is from today', () => {
+      // recordSpending writes the file with today's mtime automatically
+      recordSpending(hivePath, 'sre', 12);
+      const result = getDailySpend(hivePath, 'sre');
+      expect(result.spent).toBe(12);
+    });
+
+    it('should report the correct date after rollover', () => {
+      writeStaleSpendFile('sre', 10, 1);
+      const result = getDailySpend(hivePath, 'sre');
+      const today = new Date().toISOString().slice(0, 10);
+      expect(result.date).toBe(today);
+    });
+
+    it('should deny budget when daily max was already hit today (no rollover)', () => {
+      // Spend exactly the daily max today (fresh file)
+      recordSpending(hivePath, 'sre', 20);
+      const result = checkDailyBudget(hivePath, 'sre', 20);
+      expect(result.allowed).toBe(false);
+      expect(result.spent).toBe(20);
+    });
+
+    it('should allow budget after rollover even when previous day was maxed', () => {
+      writeStaleSpendFile('sre', 20, 1);
+      const result = checkDailyBudget(hivePath, 'sre', 20);
+      expect(result.allowed).toBe(true);
+      expect(result.spent).toBe(0);
     });
   });
 
