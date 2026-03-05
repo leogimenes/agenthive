@@ -1,0 +1,46 @@
+session: agenthive
+chat:
+  file: chat.md
+agents:
+  sre:
+    agent: sre
+    poll: 120
+    budget: 2
+    daily_max: 20
+    skip_permissions: true
+  frontend:
+    agent: frontend
+    poll: 90
+    budget: 2
+    daily_max: 20
+    skip_permissions: true
+  backend:
+    agent: backend
+    poll: 60
+    budget: 2
+    daily_max: 20
+    skip_permissions: true
+  qa:
+    agent: qa
+    poll: 90
+    budget: 2
+    daily_max: 20
+    skip_permissions: true
+  security:
+    agent: security
+    poll: 120
+    budget: 2
+    daily_max: 20
+    skip_permissions: true
+  pm:
+    agent: pm
+    poll: 120
+    budget: 2
+    daily_max: 20
+    skip_permissions: true
+defaults:
+  notifications: false
+  notify_on:
+    - BLOCKER
+    - DONE
+  transcript_retention: 20

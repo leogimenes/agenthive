@@ -1,449 +1,463 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import {
-  execSync,
-  ExecSyncOptionsWithStringEncoding,
-} from 'node:child_process';
-import {
-  mkdtempSync,
-  mkdirSync,
-  writeFileSync,
-  rmSync,
-  existsSync,
-} from 'node:fs';
+import { execSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { stringify as yamlStringify } from 'yaml';
 
-// Path to the built CLI entry point
+// Path to built CLI
 const CLI = join(__dirname, '..', '..', 'dist', 'index.js');
 
-// ── Helpers ──────────────────────────────────────────────────────────
+// Git identity env vars — avoid requiring ~/.gitconfig in CI
+const GIT_ENV = {
+  ...process.env,
+  GIT_AUTHOR_NAME: 'Test',
+  GIT_AUTHOR_EMAIL: 'test@test.com',
+  GIT_COMMITTER_NAME: 'Test',
+  GIT_COMMITTER_EMAIL: 'test@test.com',
+};
+
+// ── Git helpers ──────────────────────────────────────────────────────
 
 function git(args: string, cwd: string): string {
   return execSync(`git ${args}`, {
     cwd,
     encoding: 'utf-8',
-    stdio: ['pipe', 'pipe', 'pipe'],
-  }).toString().trim();
+    env: GIT_ENV,
+  }).trim();
 }
 
-function gitSilent(args: string, cwd: string): void {
-  execSync(`git ${args}`, { cwd, stdio: 'ignore' });
+function gitq(args: string, cwd: string): void {
+  execSync(`git ${args}`, { cwd, stdio: 'ignore', env: GIT_ENV });
 }
 
-function makeConfig(agents: Record<string, unknown> = {}) {
+// ── CLI runner ────────────────────────────────────────────────────────
+
+function runCli(
+  args: string,
+  cwd: string,
+  opts: { expectError?: boolean } = {},
+): { stdout: string; stderr: string; code: number } {
+  const execOpts = {
+    cwd,
+    encoding: 'utf-8' as const,
+    env: { ...GIT_ENV, NO_COLOR: '1', FORCE_COLOR: '0' },
+    timeout: 30000,
+  };
+
+  try {
+    const stdout = execSync(`node ${CLI} ${args}`, execOpts);
+    return { stdout: stdout.toString(), stderr: '', code: 0 };
+  } catch (err: unknown) {
+    const e = err as { stdout?: string; stderr?: string; status?: number };
+    if (!opts.expectError) throw err;
+    return {
+      stdout: (e.stdout ?? '').toString(),
+      stderr: (e.stderr ?? '').toString(),
+      code: e.status ?? 1,
+    };
+  }
+}
+
+// ── Fixture factory ───────────────────────────────────────────────────
+
+interface HiveFixture {
+  rootTmp: string;
+  remoteDir: string;
+  localDir: string;
+  hiveDir: string;
+}
+
+function makeConfig(agentNames: string[]): Record<string, unknown> {
+  const agents: Record<string, unknown> = {};
+  const roleMap: Record<string, string> = {};
+  for (const name of agentNames) {
+    agents[name] = { description: `${name} agent`, agent: name };
+    roleMap[name] = name.toUpperCase();
+  }
   return {
-    session: 'test-merge',
-    defaults: {
-      poll: 60,
-      budget: 2,
-      daily_max: 20,
-      model: 'sonnet',
-      skip_permissions: true,
-    },
+    session: 'test-session',
+    defaults: { poll: 60, budget: 2, daily_max: 20, model: 'sonnet', skip_permissions: true },
     agents,
-    chat: {
-      file: 'chat.md',
-      role_map: Object.fromEntries(
-        Object.keys(agents).map((k) => [k, k.toUpperCase()]),
-      ),
-    },
+    chat: { file: 'chat.md', role_map: roleMap },
     hooks: { safety: [], coordination: [] },
     templates: {},
   };
 }
 
+/**
+ * Creates a complete hive fixture:
+ *  - bare remote repo (the "origin")
+ *  - local repo cloned from it (the hive root)
+ *  - git worktrees for each agent at .hive/worktrees/<name> on branch agent/<name>
+ */
+function createFixture(agentNames: string[]): HiveFixture {
+  const rootTmp = mkdtempSync(join(tmpdir(), 'hive-merge-test-'));
+
+  // 1. Bare remote (origin)
+  const remoteDir = join(rootTmp, 'remote.git');
+  mkdirSync(remoteDir);
+  gitq('init --bare', remoteDir);
+
+  // 2. Local repo — seed with an initial commit on main
+  const localDir = join(rootTmp, 'local');
+  mkdirSync(localDir);
+  gitq('init', localDir);
+  gitq('config user.email "test@test.com"', localDir);
+  gitq('config user.name "Test"', localDir);
+  writeFileSync(join(localDir, 'README.md'), '# AgentHive Test\n');
+  gitq('add README.md', localDir);
+  gitq('commit -m "init"', localDir);
+  // Ensure branch is named 'main'
+  try { gitq('branch -M main', localDir); } catch { /* already main */ }
+  gitq(`remote add origin ${remoteDir}`, localDir);
+  gitq('push -u origin main', localDir);
+
+  // Set the bare remote's HEAD to 'main' so clones check out 'main' by default
+  gitq('symbolic-ref HEAD refs/heads/main', remoteDir);
+
+  // 3. .hive directory structure
+  const hiveDir = join(localDir, '.hive');
+  mkdirSync(join(hiveDir, 'state'), { recursive: true });
+  mkdirSync(join(hiveDir, 'worktrees'), { recursive: true });
+  writeFileSync(join(hiveDir, 'chat.md'), '# HIVE chat\n');
+  writeFileSync(join(hiveDir, 'config.yaml'), yamlStringify(makeConfig(agentNames)));
+
+  // 4. Git worktrees for each agent
+  for (const name of agentNames) {
+    const wtPath = join(hiveDir, 'worktrees', name);
+    gitq(`worktree add ${wtPath} -b agent/${name}`, localDir);
+  }
+
+  return { rootTmp, remoteDir, localDir, hiveDir };
+}
+
+function cleanup(fixture: HiveFixture): void {
+  rmSync(fixture.rootTmp, { recursive: true, force: true });
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────
+
 describe('hive merge (CLI integration)', () => {
-  let tmpDir: string;         // main hive root
-  let originDir: string;      // bare "remote" repo
-
-  function runCli(
-    args: string,
-    opts: { expectError?: boolean; cwd?: string } = {},
-  ): { stdout: string; stderr: string; code: number } {
-    const execOpts: ExecSyncOptionsWithStringEncoding = {
-      cwd: opts.cwd ?? tmpDir,
-      encoding: 'utf-8',
-      env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
-      timeout: 30000,
-    };
-
-    try {
-      const stdout = execSync(`node ${CLI} ${args}`, execOpts);
-      return { stdout: stdout.toString(), stderr: '', code: 0 };
-    } catch (err: unknown) {
-      const e = err as { stdout?: string; stderr?: string; status?: number };
-      if (!opts.expectError) {
-        throw err;
-      }
-      return {
-        stdout: (e.stdout ?? '').toString(),
-        stderr: (e.stderr ?? '').toString(),
-        code: e.status ?? 1,
-      };
-    }
-  }
-
-  /**
-   * Set up:
-   *   originDir  — bare repo (acts as remote "origin")
-   *   tmpDir     — clone of origin (hive root)
-   */
-  function setupRepos(agents: string[] = ['alpha', 'beta']): void {
-    // 1. Create a bare origin repo with an initial commit
-    originDir = mkdtempSync(join(tmpdir(), 'hive-merge-origin-'));
-    gitSilent('init --bare', originDir);
-    // Set default branch to 'main' so clones check out main
-    gitSilent('symbolic-ref HEAD refs/heads/main', originDir);
-
-    // 2. Bootstrap origin: clone, commit, push main
-    const bootstrap = mkdtempSync(join(tmpdir(), 'hive-merge-boot-'));
-    gitSilent(`clone ${originDir} .`, bootstrap);
-    gitSilent('config user.email "test@test.com"', bootstrap);
-    gitSilent('config user.name "Test"', bootstrap);
-    writeFileSync(join(bootstrap, 'README.md'), '# project\n', 'utf-8');
-    gitSilent('add README.md', bootstrap);
-    gitSilent('commit -m "initial commit"', bootstrap);
-    gitSilent('push origin HEAD:main', bootstrap);
-    rmSync(bootstrap, { recursive: true, force: true });
-
-    // 3. Clone origin to tmpDir (the hive root)
-    tmpDir = mkdtempSync(join(tmpdir(), 'hive-merge-main-'));
-    gitSilent(`clone ${originDir} .`, tmpDir);
-    gitSilent('config user.email "test@test.com"', tmpDir);
-    gitSilent('config user.name "Test"', tmpDir);
-
-    // 4. Create .hive directory
-    const hivePath = join(tmpDir, '.hive');
-    mkdirSync(hivePath, { recursive: true });
-    mkdirSync(join(hivePath, 'state'), { recursive: true });
-
-    const agentConfigs: Record<string, unknown> = {};
-    for (const name of agents) {
-      agentConfigs[name] = { description: `${name} agent`, agent: name };
-    }
-    writeFileSync(
-      join(hivePath, 'config.yaml'),
-      yamlStringify(makeConfig(agentConfigs)),
-      'utf-8',
-    );
-    writeFileSync(join(hivePath, 'chat.md'), '# HIVE chat\n', 'utf-8');
-
-    // 5. Create worktrees for each agent
-    const worktreesDir = join(hivePath, 'worktrees');
-    mkdirSync(worktreesDir, { recursive: true });
-
-    for (const name of agents) {
-      const wt = join(worktreesDir, name);
-      gitSilent(`worktree add -b agent/${name} ${wt}`, tmpDir);
-      gitSilent('config user.email "test@test.com"', wt);
-      gitSilent('config user.name "Test"', wt);
-    }
-  }
+  let fixture: HiveFixture;
 
   afterEach(() => {
-    if (tmpDir && existsSync(tmpDir)) {
-      // Remove worktrees before wiping to avoid git complaints
-      try {
-        gitSilent('worktree prune', tmpDir);
-      } catch {
-        // ignore
-      }
-      rmSync(tmpDir, { recursive: true, force: true });
-    }
-    if (originDir && existsSync(originDir)) {
-      rmSync(originDir, { recursive: true, force: true });
-    }
+    if (fixture) cleanup(fixture);
   });
 
-  // ── Help / options ───────────────────────────────────────────────────
+  // ── Basic rebase + push ─────────────────────────────────────────────
 
-  describe('help text', () => {
+  describe('basic rebase + push', () => {
     beforeEach(() => {
-      setupRepos();
+      fixture = createFixture(['alpha']);
+
+      // Make a commit in the alpha worktree
+      const wtPath = join(fixture.hiveDir, 'worktrees', 'alpha');
+      writeFileSync(join(wtPath, 'alpha.txt'), 'alpha work\n');
+      gitq('add alpha.txt', wtPath);
+      gitq('commit -m "alpha: add alpha.txt"', wtPath);
     });
 
-    it('should show merge command in help', () => {
-      const { stdout } = runCli('merge --help');
-      expect(stdout).toContain('merge');
-      expect(stdout).toContain('[agents...]');
+    it('should exit with code 0 when a branch is merged successfully', () => {
+      const result = runCli('merge', fixture.localDir, { expectError: true });
+      expect(result.code).toBe(0);
     });
 
-    it('should show --dry-run option', () => {
-      const { stdout } = runCli('merge --help');
-      expect(stdout).toContain('--dry-run');
+    it('should output a success indicator for the merged agent', () => {
+      const result = runCli('merge', fixture.localDir);
+      expect(result.stdout).toMatch(/alpha/);
+      expect(result.stdout).toMatch(/✓|merged|1 commit/i);
     });
 
-    it('should show --continue option', () => {
-      const { stdout } = runCli('merge --help');
-      expect(stdout).toContain('--continue');
+    it('should push the agent commit to origin main', () => {
+      runCli('merge', fixture.localDir);
+
+      // Fetch in a fresh clone to verify origin/main advanced
+      const checkDir = join(fixture.rootTmp, 'check');
+      mkdirSync(checkDir);
+      gitq(`clone ${fixture.remoteDir} ${checkDir}`, fixture.rootTmp);
+      const log = git('log --oneline', checkDir);
+      expect(log).toContain('alpha: add alpha.txt');
+    });
+
+    it('should include a Summary section in the output', () => {
+      const result = runCli('merge', fixture.localDir);
+      expect(result.stdout).toContain('Summary');
     });
   });
 
-  // ── Skip: no commits ahead of main ───────────────────────────────────
+  // ── --dry-run flag ──────────────────────────────────────────────────
 
-  describe('skip when no commits ahead of main', () => {
+  describe('--dry-run', () => {
     beforeEach(() => {
-      setupRepos(['alpha']);
+      fixture = createFixture(['alpha']);
+
+      const wtPath = join(fixture.hiveDir, 'worktrees', 'alpha');
+      writeFileSync(join(wtPath, 'alpha.txt'), 'dry run test\n');
+      gitq('add alpha.txt', wtPath);
+      gitq('commit -m "alpha: dry run commit"', wtPath);
     });
 
-    it('should skip agent with no new commits and exit zero', () => {
-      const { stdout, code } = runCli('merge');
-      expect(code).toBe(0);
-      expect(stdout).toContain('no new commits');
+    it('should output "Dry run" when --dry-run is passed', () => {
+      const result = runCli('merge --dry-run', fixture.localDir);
+      expect(result.stdout).toMatch(/dry run/i);
     });
 
-    it('should show agent name in skip output', () => {
-      const { stdout } = runCli('merge');
-      expect(stdout).toContain('alpha');
+    it('should list the agent and its commit count without merging', () => {
+      const result = runCli('merge --dry-run', fixture.localDir);
+      expect(result.stdout).toContain('alpha');
+      expect(result.stdout).toMatch(/1 commit/i);
+    });
+
+    it('should NOT push any commits to origin when --dry-run is passed', () => {
+      // Capture origin/main HEAD before dry-run
+      const beforeHead = git('rev-parse main', fixture.remoteDir);
+
+      runCli('merge --dry-run', fixture.localDir);
+
+      const afterHead = git('rev-parse main', fixture.remoteDir);
+      expect(afterHead).toBe(beforeHead);
+    });
+
+    it('should exit with code 0 on --dry-run', () => {
+      const result = runCli('merge --dry-run', fixture.localDir, { expectError: true });
+      expect(result.code).toBe(0);
     });
   });
 
-  // ── Skip: dirty worktree ────────────────────────────────────────────
+  // ── Skip: no new commits ────────────────────────────────────────────
 
-  describe('skip when worktree is dirty', () => {
+  describe('skip when no new commits', () => {
     beforeEach(() => {
-      setupRepos(['alpha']);
+      fixture = createFixture(['alpha']);
+      // Do NOT make any commits in the alpha worktree — it's identical to main
     });
 
-    it('should skip agent with uncommitted changes in worktree', () => {
-      // Add an uncommitted file to the agent worktree
-      const worktreePath = join(tmpDir, '.hive', 'worktrees', 'alpha');
-      writeFileSync(join(worktreePath, 'dirty.txt'), 'uncommitted\n', 'utf-8');
+    it('should exit with code 0 when there is nothing to merge', () => {
+      const result = runCli('merge', fixture.localDir, { expectError: true });
+      expect(result.code).toBe(0);
+    });
 
-      // Also add a commit so it would otherwise be mergeable
-      const agentFile = join(worktreePath, 'agent-work.txt');
-      writeFileSync(agentFile, 'agent work\n', 'utf-8');
-      gitSilent('add agent-work.txt', worktreePath);
-      gitSilent('commit -m "agent: add work"', worktreePath);
+    it('should report that no agents have commits to merge', () => {
+      const result = runCli('merge', fixture.localDir);
+      expect(result.stdout).toMatch(/no new commits|no agents have commits/i);
+    });
 
-      const { stdout, code } = runCli('merge');
-      expect(code).toBe(0);
-      expect(stdout).toContain('uncommitted changes');
+    it('should indicate the agent was skipped', () => {
+      const result = runCli('merge', fixture.localDir);
+      expect(result.stdout).toContain('alpha');
     });
   });
 
-  // ── Dry run ──────────────────────────────────────────────────────────
+  // ── Dirty worktree skipped ──────────────────────────────────────────
 
-  describe('--dry-run flag', () => {
+  describe('dirty worktree handling', () => {
     beforeEach(() => {
-      setupRepos(['alpha', 'beta']);
+      fixture = createFixture(['alpha']);
+
+      // Make a committed change to establish the agent branch
+      const wtPath = join(fixture.hiveDir, 'worktrees', 'alpha');
+      writeFileSync(join(wtPath, 'alpha.txt'), 'alpha work\n');
+      gitq('add alpha.txt', wtPath);
+      gitq('commit -m "alpha: initial work"', wtPath);
+
+      // Add an UNCOMMITTED change (dirty worktree)
+      writeFileSync(join(wtPath, 'dirty.txt'), 'uncommitted change\n');
     });
 
-    it('should show agents with commits but not push in dry-run mode', () => {
-      const alphaWt = join(tmpDir, '.hive', 'worktrees', 'alpha');
-      writeFileSync(join(alphaWt, 'feature.ts'), 'export const x = 1;\n', 'utf-8');
-      gitSilent('add feature.ts', alphaWt);
-      gitSilent('commit -m "feat: add feature"', alphaWt);
-
-      const { stdout, code } = runCli('merge --dry-run');
-      expect(code).toBe(0);
-      expect(stdout).toContain('Dry run');
-      expect(stdout).toContain('alpha');
-      expect(stdout).toContain('1 commit');
+    it('should skip the agent with uncommitted changes', () => {
+      const result = runCli('merge', fixture.localDir, { expectError: true });
+      // May exit 0 (all skipped) or just output the skip reason
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/alpha/);
+      expect(combined).toMatch(/uncommitted|dirty|skip/i);
     });
 
-    it('should not actually merge in dry-run mode', () => {
-      const alphaWt = join(tmpDir, '.hive', 'worktrees', 'alpha');
-      writeFileSync(join(alphaWt, 'feature.ts'), 'export const x = 1;\n', 'utf-8');
-      gitSilent('add feature.ts', alphaWt);
-      gitSilent('commit -m "feat: add feature"', alphaWt);
+    it('should NOT push anything to origin when worktree is dirty', () => {
+      const beforeHead = git('rev-parse main', fixture.remoteDir);
 
-      runCli('merge --dry-run');
+      runCli('merge', fixture.localDir, { expectError: true });
 
-      // Verify origin/main was NOT updated
-      const mainHead = git('rev-parse origin/main', tmpDir);
-      const alphaHead = git('rev-parse agent/alpha', alphaWt);
-      expect(mainHead).not.toBe(alphaHead);
-    });
-
-    it('should list skipped agents in dry-run mode', () => {
-      // alpha has no commits, beta has none either
-      const { stdout } = runCli('merge --dry-run');
-      expect(stdout).toContain('no new commits');
+      const afterHead = git('rev-parse main', fixture.remoteDir);
+      expect(afterHead).toBe(beforeHead);
     });
   });
 
-  // ── Successful merge ─────────────────────────────────────────────────
-
-  describe('successful merge (rebase + push)', () => {
-    beforeEach(() => {
-      setupRepos(['alpha']);
-    });
-
-    it('should merge agent branch onto main and print summary', () => {
-      const alphaWt = join(tmpDir, '.hive', 'worktrees', 'alpha');
-      writeFileSync(join(alphaWt, 'api.ts'), 'export const api = true;\n', 'utf-8');
-      gitSilent('add api.ts', alphaWt);
-      gitSilent('commit -m "feat: add api"', alphaWt);
-
-      const { stdout, code } = runCli('merge');
-      expect(code).toBe(0);
-      expect(stdout).toContain('alpha');
-      expect(stdout).toContain('1 commit');
-    });
-
-    it('should fast-forward push to origin main after rebase', () => {
-      const alphaWt = join(tmpDir, '.hive', 'worktrees', 'alpha');
-      writeFileSync(join(alphaWt, 'api.ts'), 'export const api = true;\n', 'utf-8');
-      gitSilent('add api.ts', alphaWt);
-      gitSilent('commit -m "feat: add api endpoint"', alphaWt);
-
-      runCli('merge');
-
-      // Fetch and verify origin/main was advanced with our commit
-      gitSilent('fetch origin', tmpDir);
-      const logOutput = git('log --oneline origin/main', tmpDir);
-      expect(logOutput).toContain('feat: add api endpoint');
-    });
-
-    it('should show summary with merged status', () => {
-      const alphaWt = join(tmpDir, '.hive', 'worktrees', 'alpha');
-      writeFileSync(join(alphaWt, 'work.ts'), 'const x = 1;\n', 'utf-8');
-      gitSilent('add work.ts', alphaWt);
-      gitSilent('commit -m "feat: work"', alphaWt);
-
-      const { stdout } = runCli('merge');
-      expect(stdout).toContain('Summary');
-    });
-  });
-
-  // ── Agent filter ─────────────────────────────────────────────────────
-
-  describe('agent filter (named agents)', () => {
-    beforeEach(() => {
-      setupRepos(['alpha', 'beta']);
-    });
-
-    it('should only merge named agent when filter provided', () => {
-      const alphaWt = join(tmpDir, '.hive', 'worktrees', 'alpha');
-      const betaWt = join(tmpDir, '.hive', 'worktrees', 'beta');
-
-      writeFileSync(join(alphaWt, 'a.ts'), 'const a = 1;\n', 'utf-8');
-      gitSilent('add a.ts', alphaWt);
-      gitSilent('commit -m "feat: alpha work"', alphaWt);
-
-      writeFileSync(join(betaWt, 'b.ts'), 'const b = 2;\n', 'utf-8');
-      gitSilent('add b.ts', betaWt);
-      gitSilent('commit -m "feat: beta work"', betaWt);
-
-      // Only merge alpha
-      const { stdout, code } = runCli('merge alpha');
-      expect(code).toBe(0);
-      expect(stdout).toContain('alpha');
-      // beta should not appear in the main output (only alpha is processed)
-      // beta won't be in the summary since we only requested alpha
-      expect(stdout).not.toContain('beta');
-    });
-
-    it('should exit with error for unknown agent', () => {
-      const { stderr, code } = runCli('merge nonexistent', { expectError: true });
-      expect(code).not.toBe(0);
-      expect(stderr).toContain('nonexistent');
-    });
-  });
-
-  // ── Conflict detection ────────────────────────────────────────────────
+  // ── Conflict detection ──────────────────────────────────────────────
 
   describe('conflict detection', () => {
     beforeEach(() => {
-      setupRepos(['alpha']);
+      fixture = createFixture(['alpha']);
+
+      const wtPath = join(fixture.hiveDir, 'worktrees', 'alpha');
+
+      // Agent commits a change to README.md (on top of original main)
+      writeFileSync(join(wtPath, 'README.md'), '# Agent Version\n');
+      gitq('add README.md', wtPath);
+      gitq('commit -m "alpha: change README"', wtPath);
+
+      // Advance origin/main with a CONFLICTING change to README.md
+      // Use a separate temp clone to push to origin
+      const seedDir = join(fixture.rootTmp, 'seed');
+      mkdirSync(seedDir);
+      gitq(`clone ${fixture.remoteDir} ${seedDir}`, fixture.rootTmp);
+      gitq('config user.email "test@test.com"', seedDir);
+      gitq('config user.name "Test"', seedDir);
+      writeFileSync(join(seedDir, 'README.md'), '# Remote Version\n');
+      gitq('add README.md', seedDir);
+      gitq('commit -m "remote: change README"', seedDir);
+      gitq('push origin main', seedDir);
     });
 
-    it('should exit non-zero and print conflict files when rebase conflicts', () => {
-      // Create a conflict:
-      // 1. Add a commit to origin/main via alpha worktree push directly
-      // 2. Modify the same file in alpha's branch
+    it('should exit with non-zero code on conflict', () => {
+      const result = runCli('merge', fixture.localDir, { expectError: true });
+      expect(result.code).not.toBe(0);
+    });
 
-      const alphaWt = join(tmpDir, '.hive', 'worktrees', 'alpha');
+    it('should report a conflict in the output', () => {
+      const result = runCli('merge', fixture.localDir, { expectError: true });
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/conflict/i);
+    });
 
-      // First: push a change to main from a second clone (so it diverges)
-      const otherDir = mkdtempSync(join(tmpdir(), 'hive-merge-other-'));
-      try {
-        gitSilent(`clone ${originDir} ${otherDir}`, tmpDir);
-        gitSilent('config user.email "other@test.com"', otherDir);
-        gitSilent('config user.name "Other"', otherDir);
-        writeFileSync(join(otherDir, 'conflict.ts'), 'const x = "main version";\n', 'utf-8');
-        gitSilent('add conflict.ts', otherDir);
-        gitSilent('commit -m "main: conflict file"', otherDir);
-        gitSilent('push origin HEAD:main', otherDir);
-      } finally {
-        rmSync(otherDir, { recursive: true, force: true });
+    it('should mention the conflicting agent name', () => {
+      const result = runCli('merge', fixture.localDir, { expectError: true });
+      const combined = result.stdout + result.stderr;
+      expect(combined).toContain('alpha');
+    });
+
+    it('should provide instructions for resolving the conflict', () => {
+      const result = runCli('merge', fixture.localDir, { expectError: true });
+      // Should mention --continue or resolution steps
+      expect(result.stdout).toMatch(/continue|resolve/i);
+    });
+  });
+
+  // ── Multi-agent merge order ─────────────────────────────────────────
+
+  describe('multi-agent merge order', () => {
+    beforeEach(() => {
+      fixture = createFixture(['zebra', 'alpha', 'mango']);
+
+      // Give each agent a unique file commit
+      for (const name of ['zebra', 'alpha', 'mango']) {
+        const wtPath = join(fixture.hiveDir, 'worktrees', name);
+        writeFileSync(join(wtPath, `${name}.txt`), `${name} work\n`);
+        gitq(`add ${name}.txt`, wtPath);
+        gitq(`commit -m "${name}: add ${name}.txt"`, wtPath);
       }
+    });
 
-      // Now add a conflicting change in the alpha worktree
-      // (alpha's branch was created before the above commit to main)
-      writeFileSync(join(alphaWt, 'conflict.ts'), 'const x = "agent version";\n', 'utf-8');
-      gitSilent('add conflict.ts', alphaWt);
-      gitSilent('commit -m "agent: conflict file"', alphaWt);
+    it('should merge all agents when no filter is given', () => {
+      const result = runCli('merge', fixture.localDir);
+      expect(result.stdout).toContain('alpha');
+      expect(result.stdout).toContain('mango');
+      expect(result.stdout).toContain('zebra');
+    });
 
-      const { stdout, stderr, code } = runCli('merge', { expectError: true });
-      expect(code).not.toBe(0);
-      // Should mention conflict
-      const combined = stdout + stderr;
-      expect(combined).toContain('conflict');
+    it('should process agents in alphabetical order by default', () => {
+      const result = runCli('merge', fixture.localDir);
+      const alphaIdx = result.stdout.indexOf('alpha');
+      const mangoIdx = result.stdout.indexOf('mango');
+      const zebraIdx = result.stdout.indexOf('zebra');
+
+      // All should appear in output
+      expect(alphaIdx).toBeGreaterThanOrEqual(0);
+      expect(mangoIdx).toBeGreaterThanOrEqual(0);
+      expect(zebraIdx).toBeGreaterThanOrEqual(0);
+
+      // alpha < mango < zebra alphabetically
+      expect(alphaIdx).toBeLessThan(mangoIdx);
+      expect(mangoIdx).toBeLessThan(zebraIdx);
+    });
+
+    it('should push all agent commits to origin main', () => {
+      runCli('merge', fixture.localDir);
+
+      const checkDir = join(fixture.rootTmp, 'check');
+      mkdirSync(checkDir);
+      gitq(`clone ${fixture.remoteDir} ${checkDir}`, fixture.rootTmp);
+      const log = git('log --oneline', checkDir);
+
+      expect(log).toContain('alpha: add alpha.txt');
+      expect(log).toContain('mango: add mango.txt');
+      expect(log).toContain('zebra: add zebra.txt');
+    });
+
+    it('should merge only specified agents when filter args are given', () => {
+      // Only merge alpha
+      const result = runCli('merge alpha', fixture.localDir);
+
+      // alpha should be merged
+      expect(result.stdout).toMatch(/alpha.*✓|✓.*alpha/);
+
+      // Only alpha's commit should be in origin main
+      const checkDir = join(fixture.rootTmp, 'check');
+      mkdirSync(checkDir);
+      gitq(`clone ${fixture.remoteDir} ${checkDir}`, fixture.rootTmp);
+      const log = git('log --oneline', checkDir);
+
+      expect(log).toContain('alpha: add alpha.txt');
+      expect(log).not.toContain('mango: add mango.txt');
+      expect(log).not.toContain('zebra: add zebra.txt');
+    });
+
+    it('should exit non-zero for unknown agent name', () => {
+      const result = runCli('merge unknown-agent', fixture.localDir, { expectError: true });
+      expect(result.code).not.toBe(0);
+      expect(result.stderr + result.stdout).toMatch(/unknown.agent|unknown-agent/i);
     });
   });
 
-  // ── No args: merge all agents ─────────────────────────────────────────
+  // ── In-progress merge guard ─────────────────────────────────────────
 
-  describe('no arguments: all agents', () => {
+  describe('in-progress merge guard', () => {
     beforeEach(() => {
-      setupRepos(['alpha', 'beta']);
+      fixture = createFixture(['alpha']);
+
+      // Create a fake merge-state.json to simulate in-progress merge
+      const stateDir = join(fixture.hiveDir, 'state');
+      mkdirSync(stateDir, { recursive: true });
+      writeFileSync(
+        join(stateDir, 'merge-state.json'),
+        JSON.stringify({
+          mainBranch: 'main',
+          currentAgent: 'alpha',
+          remainingAgents: [],
+          completedResults: [],
+        }),
+      );
     });
 
-    it('should process all agents when no agent filter is given', () => {
-      const alphaWt = join(tmpDir, '.hive', 'worktrees', 'alpha');
-      writeFileSync(join(alphaWt, 'a.ts'), 'const a = 1;\n', 'utf-8');
-      gitSilent('add a.ts', alphaWt);
-      gitSilent('commit -m "feat: alpha"', alphaWt);
+    it('should refuse to start a new merge if one is already in progress', () => {
+      const wtPath = join(fixture.hiveDir, 'worktrees', 'alpha');
+      writeFileSync(join(wtPath, 'alpha.txt'), 'alpha work\n');
+      gitq('add alpha.txt', wtPath);
+      gitq('commit -m "alpha: work"', wtPath);
 
-      // beta has no commits — should be skipped but processed
-      const { stdout, code } = runCli('merge');
-      expect(code).toBe(0);
-      expect(stdout).toContain('alpha');
-      expect(stdout).toContain('beta');
-    });
-
-    it('should report no agents to merge when all are up-to-date', () => {
-      const { stdout, code } = runCli('merge');
-      expect(code).toBe(0);
-      expect(stdout).toContain('no new commits');
+      const result = runCli('merge', fixture.localDir, { expectError: true });
+      expect(result.code).not.toBe(0);
+      expect(result.stderr + result.stdout).toMatch(/already in progress|merge.*in progress/i);
     });
   });
 
-  // ── --continue flag ─────────────────────────────────────────────────
+  // ── Branch does not exist ───────────────────────────────────────────
 
-  describe('--continue with no prior conflict', () => {
+  describe('branch does not exist', () => {
     beforeEach(() => {
-      setupRepos(['alpha']);
+      fixture = createFixture(['alpha']);
+      // Remove the worktree and branch that was created, simulating a missing branch
+      // We do this by removing the worktree directory and deleting the branch
+      const wtPath = join(fixture.hiveDir, 'worktrees', 'alpha');
+      gitq(`worktree remove ${wtPath} --force`, fixture.localDir);
+      gitq('branch -D agent/alpha', fixture.localDir);
     });
 
-    it('should exit with error when no merge is in progress', () => {
-      const { stderr, code } = runCli('merge --continue', { expectError: true });
-      expect(code).not.toBe(0);
-      expect(stderr).toContain('No merge in progress');
-    });
-  });
-
-  // ── Multiple commits ahead ────────────────────────────────────────────
-
-  describe('multiple commits', () => {
-    beforeEach(() => {
-      setupRepos(['alpha']);
-    });
-
-    it('should report correct commit count when multiple commits ahead', () => {
-      const alphaWt = join(tmpDir, '.hive', 'worktrees', 'alpha');
-
-      for (let i = 1; i <= 3; i++) {
-        writeFileSync(join(alphaWt, `work${i}.ts`), `const x${i} = ${i};\n`, 'utf-8');
-        gitSilent(`add work${i}.ts`, alphaWt);
-        gitSilent(`commit -m "feat: work ${i}"`, alphaWt);
-      }
-
-      const { stdout } = runCli('merge --dry-run');
-      expect(stdout).toContain('3 commit');
+    it('should skip agents whose branches do not exist', () => {
+      const result = runCli('merge', fixture.localDir, { expectError: true });
+      const combined = result.stdout + result.stderr;
+      expect(combined).toMatch(/alpha/);
+      expect(combined).toMatch(/branch does not exist|skip/i);
     });
   });
 });

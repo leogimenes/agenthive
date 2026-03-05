@@ -15,6 +15,8 @@ import {
   getLockStatus,
   getCheckpoint,
   setCheckpoint,
+  updateHeartbeat,
+  isProcessAlive,
 } from '../../src/core/lock.js';
 
 describe('lock', () => {
@@ -153,6 +155,140 @@ describe('lock', () => {
       setCheckpoint(hivePath, 'frontend', 20);
       expect(getCheckpoint(hivePath, 'sre')).toBe(10);
       expect(getCheckpoint(hivePath, 'frontend')).toBe(20);
+    });
+
+    it('should return 0 for a corrupt checkpoint file', () => {
+      const stateDir = join(hivePath, 'state');
+      mkdirSync(stateDir, { recursive: true });
+      writeFileSync(join(stateDir, 'sre.checkpoint'), 'not-a-number', 'utf-8');
+
+      expect(getCheckpoint(hivePath, 'sre')).toBe(0);
+    });
+  });
+
+  // ── isProcessAlive ────────────────────────────────────────────────
+
+  describe('isProcessAlive', () => {
+    it('should return true for the current process', () => {
+      expect(isProcessAlive(process.pid)).toBe(true);
+    });
+
+    it('should return false for a non-existent PID', () => {
+      // PID 999999999 is virtually guaranteed not to exist
+      expect(isProcessAlive(999999999)).toBe(false);
+    });
+
+  });
+
+  // ── updateHeartbeat ───────────────────────────────────────────────
+
+  describe('updateHeartbeat', () => {
+    it('should not throw when no lock file exists', () => {
+      expect(() => updateHeartbeat(hivePath, 'sre')).not.toThrow();
+    });
+
+    it('should preserve the PID while updating the heartbeat timestamp', () => {
+      acquireLock(hivePath, 'sre');
+      const lockFile = join(hivePath, 'state', 'sre.lock');
+      const originalContent = readFileSync(lockFile, 'utf-8');
+      const originalPid = parseInt(originalContent.split('\n')[0].trim(), 10);
+
+      updateHeartbeat(hivePath, 'sre');
+
+      const updatedContent = readFileSync(lockFile, 'utf-8');
+      const updatedPid = parseInt(updatedContent.split('\n')[0].trim(), 10);
+      const updatedHeartbeat = updatedContent.split('\n')[1]?.trim();
+
+      expect(updatedPid).toBe(originalPid);
+      expect(updatedHeartbeat).toBeDefined();
+      expect(updatedHeartbeat).not.toBe('');
+    });
+
+    it('should only update the specified agent lock and leave others untouched', () => {
+      acquireLock(hivePath, 'sre');
+      acquireLock(hivePath, 'frontend');
+
+      const frontendLockBefore = readFileSync(
+        join(hivePath, 'state', 'frontend.lock'),
+        'utf-8',
+      );
+
+      updateHeartbeat(hivePath, 'sre');
+
+      const frontendLockAfter = readFileSync(
+        join(hivePath, 'state', 'frontend.lock'),
+        'utf-8',
+      );
+
+      expect(frontendLockAfter).toBe(frontendLockBefore);
+    });
+
+    it('should write a valid ISO 8601 heartbeat timestamp', () => {
+      acquireLock(hivePath, 'sre');
+      updateHeartbeat(hivePath, 'sre');
+
+      const content = readFileSync(join(hivePath, 'state', 'sre.lock'), 'utf-8');
+      const heartbeat = content.split('\n')[1]?.trim();
+
+      expect(heartbeat).toBeDefined();
+      expect(new Date(heartbeat!).toISOString()).toBe(heartbeat);
+    });
+  });
+
+  // ── acquireLock — additional edge cases ───────────────────────────
+
+  describe('acquireLock — additional edge cases', () => {
+    it('should clean up a stale old-format lock (PID only, no heartbeat line)', () => {
+      // Old format: just a PID with no trailing timestamp line
+      const stateDir = join(hivePath, 'state');
+      mkdirSync(stateDir, { recursive: true });
+      writeFileSync(join(stateDir, 'sre.lock'), '999999999', 'utf-8');
+
+      // The stale lock (dead PID) should be cleaned and re-acquired
+      const acquired = acquireLock(hivePath, 'sre');
+      expect(acquired).toBe(true);
+
+      const content = readFileSync(join(stateDir, 'sre.lock'), 'utf-8');
+      const pid = parseInt(content.split('\n')[0].trim(), 10);
+      expect(pid).toBe(process.pid);
+    });
+
+    it('should write a heartbeat timestamp when acquiring a new lock', () => {
+      acquireLock(hivePath, 'sre');
+      const content = readFileSync(join(hivePath, 'state', 'sre.lock'), 'utf-8');
+      const lines = content.split('\n');
+      expect(lines.length).toBeGreaterThanOrEqual(2);
+      expect(new Date(lines[1].trim()).toISOString()).toBe(lines[1].trim());
+    });
+  });
+
+  // ── getLockStatus — additional edge cases ─────────────────────────
+
+  describe('getLockStatus — additional edge cases', () => {
+    it('should return undefined heartbeat for old-format lock files', () => {
+      // Old format: PID only, no heartbeat line
+      const stateDir = join(hivePath, 'state');
+      mkdirSync(stateDir, { recursive: true });
+      // Use current process PID so the process is alive (not stale)
+      writeFileSync(join(stateDir, 'sre.lock'), String(process.pid), 'utf-8');
+
+      const status = getLockStatus(hivePath, 'sre');
+      expect(status.locked).toBe(true);
+      expect(status.stale).toBe(false);
+      expect(status.heartbeat).toBeUndefined();
+    });
+
+    it('should report stale with heartbeat when dead PID has timestamp', () => {
+      const stateDir = join(hivePath, 'state');
+      mkdirSync(stateDir, { recursive: true });
+      const ts = new Date().toISOString();
+      writeFileSync(join(stateDir, 'sre.lock'), `999999999\n${ts}`, 'utf-8');
+
+      const status = getLockStatus(hivePath, 'sre');
+      expect(status.locked).toBe(true);
+      expect(status.stale).toBe(true);
+      expect(status.pid).toBe(999999999);
+      expect(status.heartbeat).toBe(ts);
     });
   });
 });

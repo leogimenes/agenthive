@@ -1,4 +1,4 @@
-export type Panel = 'status' | 'chat' | 'plan' | 'input';
+export type Panel = 'status' | 'chat' | 'plan' | 'input' | 'transcript' | 'tree';
 
 export type Action =
   | { type: 'quit' }
@@ -22,6 +22,7 @@ export const HELP_ENTRIES = [
   { key: 'q / Ctrl+C', desc: 'Quit TUI' },
   { key: 'Tab', desc: 'Cycle panels' },
   { key: '1 / 2 / 3 / 4', desc: 'Jump to panel (status/chat/plan/input)' },
+  { key: 'c', desc: 'Toggle / focus chat panel' },
   { key: 'p', desc: 'Jump to plan panel' },
   { key: 'd', desc: 'Focus dispatch input' },
   { key: '?', desc: 'Toggle help overlay' },
@@ -46,6 +47,26 @@ export const HELP_ENTRIES = [
   { key: 'f', desc: 'Cycle status filter' },
   { key: 'a', desc: 'Cycle agent filter' },
   { key: 'Esc', desc: 'Close detail view' },
+  { key: '', desc: '' },
+  { key: '── Epic Tree ──', desc: '' },
+  { key: 'e', desc: 'Toggle epic tree panel' },
+  { key: 'j / k / ↑ / ↓', desc: 'Navigate nodes' },
+  { key: 'Space', desc: 'Expand / collapse epic or story' },
+  { key: 'Enter', desc: 'Open epic dispatch view' },
+  { key: 'G', desc: 'Jump to last node' },
+  { key: 'Esc', desc: 'Exit tree panel' },
+  { key: '', desc: '' },
+  { key: '── Epic Dispatch ──', desc: '' },
+  { key: 's', desc: 'Start: dispatch all ready tasks' },
+  { key: 'p', desc: 'Pause / resume auto-dispatch' },
+  { key: 'd', desc: 'Deliver: trigger completion workflow' },
+  { key: 'y / n', desc: 'Confirm / cancel action' },
+  { key: 'Esc', desc: 'Back to epic tree' },
+  { key: '', desc: '' },
+  { key: '── Transcript ──', desc: '' },
+  { key: 't', desc: 'Toggle transcript panel' },
+  { key: 'h / l', desc: 'Previous / next agent' },
+  { key: 'j / k / ↑ / ↓', desc: 'Scroll events' },
   { key: '', desc: '' },
   { key: '── Input ──', desc: '' },
   { key: 'Enter', desc: 'Send message' },
