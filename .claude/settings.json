@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "/home/leonardosg/repos/projects/agenthive/.hive/hooks/destructive-guard.sh"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "/home/leonardosg/repos/projects/agenthive/.hive/hooks/check-chat.sh"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "/home/leonardosg/repos/projects/agenthive/.hive/hooks/check-chat.sh"
+      }
+    ]
+  }
+}
