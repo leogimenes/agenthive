@@ -12,6 +12,7 @@ import type {
   PlanUpdate,
   Priority,
   TaskStatus,
+  TaskType,
   DAGValidation,
 } from '../types/plan.js';
 import type { ChatMessage } from '../types/config.js';
@@ -420,6 +421,60 @@ export function computeParentStatus(
   if (failed > 0) return { status: 'warning', done, total: children.length };
   if (running > 0) return { status: 'running', done, total: children.length };
   return { status: 'progress', done, total: children.length };
+}
+
+/**
+ * Get direct children of a task by parent ID.
+ * Alias of getChildTasks, provided for hierarchy-model API consistency.
+ */
+export function getChildren(plan: Plan, taskId: string): PlanTask[] {
+  return plan.tasks.filter((t) => t.parent === taskId);
+}
+
+/**
+ * Get all ancestors of a task by traversing the parent chain.
+ * Returns tasks ordered from root ancestor to direct parent.
+ * Stops at the first unresolvable or already-visited ID (cycle guard).
+ */
+export function getAncestors(plan: Plan, taskId: string): PlanTask[] {
+  const taskMap = new Map(plan.tasks.map((t) => [t.id, t]));
+  const ancestors: PlanTask[] = [];
+  const visited = new Set<string>();
+
+  let current = taskMap.get(taskId);
+  while (current?.parent) {
+    if (visited.has(current.parent)) break; // cycle guard
+    visited.add(current.parent);
+    const parent = taskMap.get(current.parent);
+    if (!parent) break;
+    ancestors.unshift(parent); // prepend so result is root-first
+    current = parent;
+  }
+
+  return ancestors;
+}
+
+/**
+ * Validate that a parent/child type relationship is structurally sound.
+ *
+ * Allowed hierarchy: epic → story → task
+ * - epic can parent story or task
+ * - story can parent task
+ * - task cannot parent any typed child
+ *
+ * When either task's type is undefined the relationship is considered valid
+ * (untyped tasks do not enforce hierarchy constraints).
+ */
+export function validateParentType(parent: PlanTask, child: PlanTask): boolean {
+  if (!parent.type || !child.type) return true;
+
+  const allowed: Record<TaskType, TaskType[]> = {
+    epic: ['story', 'task'],
+    story: ['task'],
+    task: [],
+  };
+
+  return allowed[parent.type].includes(child.type);
 }
 
 // ── Critical path ────────────────────────────────────────────────────

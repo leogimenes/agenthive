@@ -6,6 +6,9 @@
 /** Priority levels: p0 = critical, p1 = high, p2 = normal, p3 = low. */
 export type Priority = 'p0' | 'p1' | 'p2' | 'p3';
 
+/** Hierarchy level of a plan task. */
+export type TaskType = 'epic' | 'story' | 'task';
+
 /** Lifecycle status of a plan task. */
 export type TaskStatus =
   | 'open'
@@ -29,6 +32,9 @@ export type TaskStatus =
 export interface PlanTask {
   /** Short unique ID. User-provided (e.g., "BE-06") or auto-generated hash. */
   id: string;
+
+  /** Hierarchy level: epic > story > task. When omitted the task is untyped. */
+  type?: TaskType;
 
   /** Imperative title — what needs to happen. */
   title: string;

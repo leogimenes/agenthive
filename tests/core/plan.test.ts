@@ -22,8 +22,11 @@ import {
   dispatchTask,
   resetTaskForRetry,
   DEFAULT_MAX_RETRIES,
+  getChildren,
+  getAncestors,
+  validateParentType,
 } from '../../src/core/plan.js';
-import type { Plan, PlanTask } from '../../src/types/plan.js';
+import type { Plan, PlanTask, TaskType } from '../../src/types/plan.js';
 import type { ChatMessage } from '../../src/types/config.js';
 import { initChatFile, readMessages } from '../../src/core/chat.js';
 
@@ -735,6 +738,179 @@ describe('plan', () => {
       const result = resetTaskForRetry(task);
       expect(result).toBe('failed');
       expect(task.status).toBe('failed');
+    });
+  });
+
+  // ── TaskType field ──────────────────────────────────────────────────
+
+  describe('TaskType field', () => {
+    it('should accept epic type on a task', () => {
+      const task = makeTask({ id: 'EP-01', type: 'epic' as TaskType });
+      expect(task.type).toBe('epic');
+    });
+
+    it('should accept story type on a task', () => {
+      const task = makeTask({ id: 'ST-01', type: 'story' as TaskType });
+      expect(task.type).toBe('story');
+    });
+
+    it('should accept task type on a task', () => {
+      const task = makeTask({ id: 'TA-01', type: 'task' as TaskType });
+      expect(task.type).toBe('task');
+    });
+
+    it('should default to undefined when type is not set', () => {
+      const task = makeTask({ id: 'TA-01' });
+      expect(task.type).toBeUndefined();
+    });
+
+    it('should persist type through save/load', () => {
+      const plan = makePlan([makeTask({ id: 'EP-01', type: 'epic' as TaskType })]);
+      savePlan(hivePath, plan);
+      const loaded = loadPlan(hivePath);
+      expect(loaded!.tasks[0].type).toBe('epic');
+    });
+  });
+
+  // ── getChildren ────────────────────────────────────────────────────
+
+  describe('getChildren', () => {
+    it('should return direct children of a task', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic-1', type: 'epic' as TaskType }),
+        makeTask({ id: 'story-1', type: 'story' as TaskType, parent: 'epic-1' }),
+        makeTask({ id: 'story-2', type: 'story' as TaskType, parent: 'epic-1' }),
+        makeTask({ id: 'task-1', type: 'task' as TaskType, parent: 'story-1' }),
+      ]);
+      const children = getChildren(plan, 'epic-1');
+      expect(children).toHaveLength(2);
+      expect(children.map((t) => t.id).sort()).toEqual(['story-1', 'story-2']);
+    });
+
+    it('should return empty array when task has no children', () => {
+      const plan = makePlan([
+        makeTask({ id: 'task-1', type: 'task' as TaskType }),
+      ]);
+      expect(getChildren(plan, 'task-1')).toHaveLength(0);
+    });
+
+    it('should only return direct children (not grandchildren)', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic-1', type: 'epic' as TaskType }),
+        makeTask({ id: 'story-1', type: 'story' as TaskType, parent: 'epic-1' }),
+        makeTask({ id: 'task-1', type: 'task' as TaskType, parent: 'story-1' }),
+      ]);
+      const children = getChildren(plan, 'epic-1');
+      expect(children).toHaveLength(1);
+      expect(children[0].id).toBe('story-1');
+    });
+  });
+
+  // ── getAncestors ───────────────────────────────────────────────────
+
+  describe('getAncestors', () => {
+    it('should return empty array for a root task', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic-1', type: 'epic' as TaskType }),
+      ]);
+      expect(getAncestors(plan, 'epic-1')).toHaveLength(0);
+    });
+
+    it('should return parent for a task one level deep', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic-1', type: 'epic' as TaskType }),
+        makeTask({ id: 'story-1', type: 'story' as TaskType, parent: 'epic-1' }),
+      ]);
+      const ancestors = getAncestors(plan, 'story-1');
+      expect(ancestors).toHaveLength(1);
+      expect(ancestors[0].id).toBe('epic-1');
+    });
+
+    it('should return full ancestor chain ordered from root to direct parent', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic-1', type: 'epic' as TaskType }),
+        makeTask({ id: 'story-1', type: 'story' as TaskType, parent: 'epic-1' }),
+        makeTask({ id: 'task-1', type: 'task' as TaskType, parent: 'story-1' }),
+      ]);
+      const ancestors = getAncestors(plan, 'task-1');
+      expect(ancestors).toHaveLength(2);
+      expect(ancestors[0].id).toBe('epic-1');
+      expect(ancestors[1].id).toBe('story-1');
+    });
+
+    it('should return empty for a task with unknown parent', () => {
+      const plan = makePlan([
+        makeTask({ id: 'task-1', parent: 'nonexistent' }),
+      ]);
+      expect(getAncestors(plan, 'task-1')).toHaveLength(0);
+    });
+
+    it('should stop traversal at cycles to avoid infinite loops', () => {
+      const plan = makePlan([
+        makeTask({ id: 'a', parent: 'b' }),
+        makeTask({ id: 'b', parent: 'a' }),
+      ]);
+      // Should not throw; just return what it can
+      const ancestors = getAncestors(plan, 'a');
+      expect(ancestors.length).toBeLessThanOrEqual(2);
+    });
+  });
+
+  // ── validateParentType ─────────────────────────────────────────────
+
+  describe('validateParentType', () => {
+    it('should allow epic as parent of story', () => {
+      const parent = makeTask({ id: 'epic-1', type: 'epic' as TaskType });
+      const child = makeTask({ id: 'story-1', type: 'story' as TaskType });
+      expect(validateParentType(parent, child)).toBe(true);
+    });
+
+    it('should allow epic as parent of task', () => {
+      const parent = makeTask({ id: 'epic-1', type: 'epic' as TaskType });
+      const child = makeTask({ id: 'task-1', type: 'task' as TaskType });
+      expect(validateParentType(parent, child)).toBe(true);
+    });
+
+    it('should allow story as parent of task', () => {
+      const parent = makeTask({ id: 'story-1', type: 'story' as TaskType });
+      const child = makeTask({ id: 'task-1', type: 'task' as TaskType });
+      expect(validateParentType(parent, child)).toBe(true);
+    });
+
+    it('should disallow task as parent of any typed child', () => {
+      const parent = makeTask({ id: 'task-1', type: 'task' as TaskType });
+      const child = makeTask({ id: 'task-2', type: 'task' as TaskType });
+      expect(validateParentType(parent, child)).toBe(false);
+    });
+
+    it('should disallow story as parent of story', () => {
+      const parent = makeTask({ id: 'story-1', type: 'story' as TaskType });
+      const child = makeTask({ id: 'story-2', type: 'story' as TaskType });
+      expect(validateParentType(parent, child)).toBe(false);
+    });
+
+    it('should disallow story as parent of epic', () => {
+      const parent = makeTask({ id: 'story-1', type: 'story' as TaskType });
+      const child = makeTask({ id: 'epic-1', type: 'epic' as TaskType });
+      expect(validateParentType(parent, child)).toBe(false);
+    });
+
+    it('should disallow epic as parent of epic', () => {
+      const parent = makeTask({ id: 'epic-1', type: 'epic' as TaskType });
+      const child = makeTask({ id: 'epic-2', type: 'epic' as TaskType });
+      expect(validateParentType(parent, child)).toBe(false);
+    });
+
+    it('should allow any parent when child type is not set', () => {
+      const parent = makeTask({ id: 'task-1', type: 'task' as TaskType });
+      const child = makeTask({ id: 'child-1' }); // no type
+      expect(validateParentType(parent, child)).toBe(true);
+    });
+
+    it('should allow any child when parent type is not set', () => {
+      const parent = makeTask({ id: 'parent-1' }); // no type
+      const child = makeTask({ id: 'child-1', type: 'task' as TaskType });
+      expect(validateParentType(parent, child)).toBe(true);
     });
   });
 });
