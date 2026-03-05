@@ -6,6 +6,7 @@ import { findRequests, appendMessage, getChatLineCount, resolveChatPath, readMes
 import { syncWorktree, rebaseAndPush } from './worktree.js';
 import { loadPlan, savePlan, reconcilePlanWithChat, computeReadyTasks, promoteReadyTasks, resetTaskForRetry, DEFAULT_MAX_RETRIES } from './plan.js';
 import { notify } from './notify.js';
+import { rotateTranscripts } from './transcripts.js';
 import type { ResolvedAgentConfig, HiveConfig } from '../types/config.js';
 
 // ── Constants ───────────────────────────────────────────────────────
@@ -97,6 +98,13 @@ export class AgentLoop {
   private async cycle(): Promise<void> {
     // 0a. Update heartbeat in lock file
     updateHeartbeat(this.hivePath, this.agent.name);
+
+    // 0b. Rotate old transcripts to keep storage bounded
+    const retention = this.hiveConfig.defaults.transcript_retention;
+    const rotated = rotateTranscripts(this.agent.worktreePath, retention);
+    if (rotated.deleted > 0) {
+      this.log(`Rotated transcripts: deleted ${rotated.deleted} old session(s) (retention=${retention})`);
+    }
 
     // 0. Check daily budget
     const { allowed, spent } = checkDailyBudget(
@@ -328,7 +336,6 @@ export class AgentLoop {
     const args = [
       '-p',
       '--agent', this.agent.agent,
-      '--no-session-persistence',
       '--max-budget-usd', String(this.agent.budget),
       '--output-format', 'json',
     ];

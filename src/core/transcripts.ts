@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join, basename, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -279,4 +279,67 @@ export function formatDuration(secs: number): string {
   const h = Math.floor(m / 60);
   const rm = m % 60;
   return rm > 0 ? `${h}h${rm}m` : `${h}h`;
+}
+
+// ── Transcript rotation ───────────────────────────────────────────────
+
+/**
+ * Rotate transcripts in a given transcript directory.
+ * Keeps the `retention` newest sessions and deletes older ones.
+ * For each deleted session, removes both the `.jsonl` file and the
+ * corresponding `tool-results/<session-id>/` directory if present.
+ *
+ * Returns the count of deleted sessions.
+ */
+export function rotateTranscriptDir(
+  transcriptDir: string,
+  retention: number,
+): { deleted: number } {
+  if (!existsSync(transcriptDir)) return { deleted: 0 };
+
+  const sessions = listSessions(transcriptDir);
+  if (sessions.length <= retention) return { deleted: 0 };
+
+  // sessions is sorted newest-first; slice off the oldest ones
+  const toDelete = sessions.slice(retention);
+  let deleted = 0;
+
+  for (const session of toDelete) {
+    // Remove the JSONL file
+    try {
+      rmSync(session.path);
+      deleted++;
+    } catch {
+      // Ignore — file may already be gone
+    }
+
+    // Remove the tool-results directory for this session if it exists
+    const toolResultsDir = join(transcriptDir, 'tool-results', session.id);
+    try {
+      if (existsSync(toolResultsDir)) {
+        rmSync(toolResultsDir, { recursive: true });
+      }
+    } catch {
+      // Ignore — best-effort cleanup
+    }
+  }
+
+  return { deleted };
+}
+
+/**
+ * Rotate transcripts for a given agent worktree.
+ * Resolves the Claude Code transcript directory from the worktree path,
+ * then delegates to `rotateTranscriptDir`.
+ *
+ * @param worktreePath  Absolute path to the agent's git worktree.
+ * @param retention     Number of sessions to keep. Default: 20.
+ */
+export function rotateTranscripts(
+  worktreePath: string,
+  retention = 20,
+): { deleted: number } {
+  const transcriptDir = findTranscriptDir(worktreePath);
+  if (!transcriptDir) return { deleted: 0 };
+  return rotateTranscriptDir(transcriptDir, retention);
 }

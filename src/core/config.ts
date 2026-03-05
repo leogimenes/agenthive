@@ -42,6 +42,7 @@ const DEFAULT_DEFAULTS: DefaultsConfig = {
   skip_permissions: true,
   notifications: false,
   notify_on: ['DONE', 'BLOCKER'],
+  transcript_retention: 20,
 };
 
 // ── Path resolution ─────────────────────────────────────────────────
@@ -125,6 +126,10 @@ function validateAndNormalize(
         : DEFAULT_DEFAULTS.notifications,
     notify_on:
       toStringArray(rawDefaults.notify_on) ?? DEFAULT_DEFAULTS.notify_on,
+    transcript_retention: toNumber(
+      rawDefaults.transcript_retention,
+      DEFAULT_DEFAULTS.transcript_retention,
+    ),
   };
 
   // Agents

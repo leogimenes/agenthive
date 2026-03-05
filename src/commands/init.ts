@@ -332,6 +332,7 @@ function buildConfig(
     skip_permissions: true,
     notifications: false,
     notify_on: ['DONE', 'BLOCKER'],
+    transcript_retention: 20,
   };
 
   const agents: Record<string, AgentConfig> = {};
@@ -380,6 +381,7 @@ function buildConfigFromProfile(
     skip_permissions: typeof rawDefaults.skip_permissions === 'boolean' ? rawDefaults.skip_permissions : true,
     notifications: typeof rawDefaults.notifications === 'boolean' ? rawDefaults.notifications : false,
     notify_on: Array.isArray(rawDefaults.notify_on) ? rawDefaults.notify_on as string[] : ['DONE', 'BLOCKER'],
+    transcript_retention: typeof rawDefaults.transcript_retention === 'number' ? rawDefaults.transcript_retention : 20,
   };
 
   // Extract agents from profile
