@@ -32,7 +32,7 @@ import {
   PRIORITY_ORDER,
 } from '../core/plan.js';
 import { resolveChatPath } from '../core/chat.js';
-import type { Plan, PlanTask, Priority, TaskStatus } from '../types/plan.js';
+import type { Plan, PlanTask, Priority, TaskStatus, TaskType } from '../types/plan.js';
 
 // ── Status icons and colors ──────────────────────────────────────────
 
@@ -83,6 +83,7 @@ Quick start:
   plan
     .option('--json', 'Output plan as JSON')
     .option('--compact', 'Compact one-line-per-task view')
+    .option('--flat', 'Flat list — no grouping under epic headers')
     .option('--filter <filter>', 'Filter by agent, status, or label')
     .action(async (opts) => {
       const cwd = program.opts().cwd
@@ -97,6 +98,7 @@ Quick start:
     .description('Add a task to the plan')
     .option('--id <id>', 'Custom task ID')
     .option('--priority <p>', 'Priority: p0, p1, p2, p3', 'p2')
+    .option('--type <type>', 'Hierarchy type: epic, story, task')
     .option('--depends-on <ids>', 'Comma-separated dependency IDs')
     .option('--parent <id>', 'Parent task ID')
     .option('--labels <labels>', 'Comma-separated labels')
@@ -305,7 +307,7 @@ function taskLine(task: PlanTask, compact = false): string {
 
 async function runBoard(
   cwd: string,
-  opts: { json?: boolean; compact?: boolean; filter?: string },
+  opts: { json?: boolean; compact?: boolean; flat?: boolean; filter?: string },
 ): Promise<void> {
   const { hivePath, config } = loadContext(cwd);
   const plan = loadOrCreatePlan(hivePath, config.session);
@@ -342,6 +344,59 @@ async function runBoard(
     const ready = computeReadyTasks(plan);
     if (ready.length > 0) {
       console.log(`\n${chalk.cyan(`Ready: ${ready.length} tasks. Run \`hive plan dispatch\` to send them.`)}\n`);
+    }
+    return;
+  }
+
+  // Epic-grouped view (default when epics exist, suppressed by --flat)
+  const epics = tasks.filter((t) => t.type === 'epic');
+  if (!opts.flat && epics.length > 0) {
+    console.log(chalk.bold(`\n🐝 AgentHive — Plan: ${plan.name} (${tasks.length} tasks)\n`));
+    for (const epic of sortByPriority(epics)) {
+      const ps = computeParentStatus(plan, epic.id);
+      const progressStr = ps.total > 0
+        ? ` ${chalk.gray(`(${ps.done}/${ps.total})`)}`
+        : '';
+      const epicColor = STATUS_COLOR[epic.status] ?? chalk.white;
+      console.log(`${chalk.bold.cyan('◈')} ${chalk.bold(epic.id)}${progressStr} ${chalk.bold(epic.title)}`);
+      // Children of this epic
+      const children = tasks.filter((t) => t.parent === epic.id);
+      for (const child of sortByPriority(children)) {
+        const icon = STATUS_ICON[child.status] ?? '?';
+        const color = STATUS_COLOR[child.status] ?? chalk.white;
+        const priColor = PRIORITY_COLOR[child.priority] ?? chalk.white;
+        const typeTag = child.type ? chalk.gray(`[${child.type}] `) : '';
+        console.log(`  ${color(icon)} ${pad(child.id, 10)} ${priColor(pad(child.priority, 4))} ${typeTag}${chalk.gray(pad(child.target, 10))} ${child.title}`);
+      }
+      console.log('');
+    }
+    // Tasks not under any epic
+    const orphans = tasks.filter((t) => t.type !== 'epic' && (!t.parent || !tasks.some((e) => e.id === t.parent && e.type === 'epic')));
+    if (orphans.length > 0) {
+      console.log(chalk.gray('── Unassigned ──────────────'));
+      for (const task of sortByPriority(orphans)) {
+        const icon = STATUS_ICON[task.status] ?? '?';
+        const color = STATUS_COLOR[task.status] ?? chalk.white;
+        const priColor = PRIORITY_COLOR[task.priority] ?? chalk.white;
+        const typeTag = task.type ? chalk.gray(`[${task.type}] `) : '';
+        console.log(`${color(icon)} ${pad(task.id, 10)} ${priColor(pad(task.priority, 4))} ${typeTag}${chalk.gray(pad(task.target, 10))} ${task.title}`);
+      }
+      console.log('');
+    }
+    const ready = computeReadyTasks(plan);
+    const failed = plan.tasks.filter((t) => t.status === 'failed');
+    const allDone = plan.tasks.every((t) => t.status === 'done');
+    if (allDone) {
+      console.log(`\n${chalk.green('✓ All tasks complete!')}`);
+    } else if (failed.length > 0) {
+      console.log(`\n${chalk.red(`✗ ${failed.length} task(s) failed. Run \`hive plan reset <id>\` to retry.`)}`);
+      if (ready.length > 0) {
+        console.log(chalk.cyan(`  ${ready.length} task(s) ready to dispatch. Run \`hive plan dispatch\`.`));
+      }
+    } else if (ready.length > 0) {
+      console.log(`\n${chalk.cyan(`${ready.length} task(s) ready to dispatch. Run \`hive plan dispatch\` or press \`p\` in the TUI.`)}`);
+    } else {
+      console.log('');
     }
     return;
   }
@@ -441,6 +496,7 @@ async function runAddWizard(
   preTitle?: string,
   opts: {
     id?: string;
+    type?: string;
     priority?: string;
     dependsOn?: string;
     parent?: string;
@@ -561,6 +617,7 @@ async function runAddWizard(
   // Delegate to runAdd with resolved values
   await runAdd(cwd, target, title, {
     id: opts.id,
+    type: opts.type,
     priority,
     dependsOn: dependsOn.length > 0 ? dependsOn.join(',') : undefined,
     parent,
@@ -577,6 +634,7 @@ async function runAdd(
   title: string,
   opts: {
     id?: string;
+    type?: string;
     priority?: string;
     dependsOn?: string;
     parent?: string;
@@ -586,6 +644,14 @@ async function runAdd(
 ): Promise<void> {
   const { hivePath, config } = loadContext(cwd);
   const plan = loadOrCreatePlan(hivePath, config.session);
+
+  // Validate type
+  const validTypes: TaskType[] = ['epic', 'story', 'task'];
+  if (opts.type && !validTypes.includes(opts.type as TaskType)) {
+    console.error(chalk.red(`Invalid type: "${opts.type}". Must be epic, story, or task.`));
+    process.exit(1);
+  }
+  const taskType = opts.type as TaskType | undefined;
 
   // Validate priority
   const priority = (opts.priority ?? 'p2') as Priority;
@@ -653,6 +719,7 @@ async function runAdd(
     depends_on: dependsOn,
     created_at: now,
     updated_at: now,
+    ...(taskType ? { type: taskType } : {}),
     ...(opts.description ? { description: opts.description } : {}),
     ...(opts.parent ? { parent: opts.parent } : {}),
     ...(labels ? { labels } : {}),
@@ -1424,47 +1491,51 @@ async function runTree(cwd: string): Promise<void> {
 
   console.log(chalk.bold(`\n🐝 AgentHive — Plan Tree: ${plan.name}\n`));
 
-  // Find top-level tasks (no parent)
-  const topLevel = plan.tasks.filter((t) => !t.parent);
-  // Find parents (tasks that have children)
-  const parentIds = new Set(
-    plan.tasks.filter((t) => t.parent).map((t) => t.parent!),
-  );
+  const taskMap = new Map(plan.tasks.map((t) => [t.id, t]));
 
-  for (const task of sortByPriority(topLevel)) {
+  // Recursively print a task and its children with indentation
+  function printTask(task: PlanTask, indent: string, isLast: boolean): void {
     const icon = STATUS_ICON[task.status] ?? '?';
     const color = STATUS_COLOR[task.status] ?? chalk.white;
+    const priColor = PRIORITY_COLOR[task.priority] ?? chalk.white;
+    const children = sortByPriority(getChildTasks(plan, task.id));
+    const hasChildren = children.length > 0;
 
-    if (parentIds.has(task.id)) {
-      // This is a parent — show with children
+    const connector = indent === '' ? '' : (isLast ? '└── ' : '├── ');
+    const typeTag = task.type ? chalk.cyan(`[${task.type}] `) : '';
+
+    if (hasChildren) {
       const ps = computeParentStatus(plan, task.id);
       const progressStr = ps.status === 'done'
         ? chalk.green('✓ done')
-        : `${ps.done}/${ps.total} done`;
-
-      console.log(`${chalk.bold(task.id)} ${chalk.gray(`(${progressStr})`)}`);
-      console.log(chalk.gray(`  ${task.title}`));
-
-      const children = sortByPriority(getChildTasks(plan, task.id));
-      for (let i = 0; i < children.length; i++) {
-        const child = children[i];
-        const isLast = i === children.length - 1;
-        const prefix = isLast ? '└── ' : '├── ';
-        const cIcon = STATUS_ICON[child.status] ?? '?';
-        const cColor = STATUS_COLOR[child.status] ?? chalk.white;
-        const priColor = PRIORITY_COLOR[child.priority] ?? chalk.white;
-
-        console.log(
-          `${chalk.gray(prefix)}${cColor(cIcon)} ${child.id} ${priColor(child.priority)} ${chalk.gray(child.target)} — ${child.title}`,
-        );
-      }
-      console.log('');
-    } else if (!task.parent) {
-      // Standalone task
-      const priColor = PRIORITY_COLOR[task.priority] ?? chalk.white;
+        : chalk.gray(`${ps.done}/${ps.total} done`);
       console.log(
-        `${color(icon)} ${task.id} ${priColor(task.priority)} ${chalk.gray(task.target)} — ${task.title}`,
+        `${indent}${connector}${color(icon)} ${chalk.bold(task.id)} ${typeTag}${progressStr}`,
       );
+      console.log(
+        `${indent}${indent === '' ? '' : (isLast ? '    ' : '│   ')}  ${chalk.gray(task.title)} ${priColor(task.priority)} ${chalk.gray(task.target)}`,
+      );
+    } else {
+      console.log(
+        `${indent}${connector}${color(icon)} ${task.id} ${typeTag}${priColor(task.priority)} ${chalk.gray(task.target)} — ${task.title}`,
+      );
+    }
+
+    if (hasChildren) {
+      const childIndent = indent + (indent === '' ? '' : (isLast ? '    ' : '│   '));
+      for (let i = 0; i < children.length; i++) {
+        printTask(children[i], childIndent, i === children.length - 1);
+      }
+    }
+  }
+
+  // Find top-level tasks (no parent)
+  const topLevel = sortByPriority(plan.tasks.filter((t) => !t.parent));
+  for (let i = 0; i < topLevel.length; i++) {
+    printTask(topLevel[i], '', i === topLevel.length - 1);
+    // Add blank line between top-level items that have children
+    if (getChildTasks(plan, topLevel[i].id).length > 0) {
+      console.log('');
     }
   }
   console.log('');

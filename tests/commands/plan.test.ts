@@ -544,6 +544,64 @@ describe('hive plan (CLI integration)', () => {
       expect(stdout).toContain('TR-A');
       expect(stdout).toContain('TR-B');
     });
+
+    it('should show multi-level hierarchy with type tags', () => {
+      runCli('plan add backend "Auth Epic" --id E-01 --type epic');
+      runCli('plan add backend "Login Story" --id S-01 --type story --parent E-01');
+      runCli('plan add backend "Add login endpoint" --id T-01 --type task --parent S-01');
+      const { stdout } = runCli('plan tree');
+      expect(stdout).toContain('E-01');
+      expect(stdout).toContain('S-01');
+      expect(stdout).toContain('T-01');
+      expect(stdout).toContain('[epic]');
+      expect(stdout).toContain('[story]');
+      expect(stdout).toContain('[task]');
+    });
+  });
+
+  // ── epic/story/task type support ───────────────────────────────────
+
+  describe('epic/story/task type support', () => {
+    it('should add a task with --type epic', () => {
+      const { stdout } = runCli('plan add backend "Auth Epic" --id EP-01 --type epic');
+      expect(stdout).toContain('EP-01');
+      const plan = JSON.parse(readFileSync(join(hivePath, 'plan.json'), 'utf-8'));
+      expect(plan.tasks[0].type).toBe('epic');
+    });
+
+    it('should add a task with --type story', () => {
+      runCli('plan add backend "Auth Epic" --id EP-02 --type epic');
+      const { stdout } = runCli('plan add backend "Login Story" --id ST-02 --type story --parent EP-02');
+      expect(stdout).toContain('ST-02');
+      const plan = JSON.parse(readFileSync(join(hivePath, 'plan.json'), 'utf-8'));
+      const story = plan.tasks.find((t: { id: string }) => t.id === 'ST-02');
+      expect(story.type).toBe('story');
+      expect(story.parent).toBe('EP-02');
+    });
+
+    it('should reject invalid --type value', () => {
+      const { stderr, code } = runCli('plan add backend "Task" --type invalid', { expectError: true });
+      expect(code).not.toBe(0);
+      expect(stderr).toContain('Invalid type');
+    });
+
+    it('should show board grouped under epic headers when epics exist', () => {
+      runCli('plan add backend "Auth Epic" --id GRP-E --type epic');
+      runCli('plan add backend "Login task" --id GRP-T --type task --parent GRP-E');
+      const { stdout } = runCli('plan');
+      // Epic header should appear
+      expect(stdout).toContain('GRP-E');
+      expect(stdout).toContain('GRP-T');
+    });
+
+    it('should show flat board with --flat flag even when epics exist', () => {
+      runCli('plan add backend "Auth Epic" --id FLT-E --type epic');
+      runCli('plan add backend "Login task" --id FLT-T --type task --parent FLT-E');
+      const { stdout } = runCli('plan --flat');
+      // Both tasks should appear in flat Kanban columns
+      expect(stdout).toContain('FLT-E');
+      expect(stdout).toContain('FLT-T');
+    });
   });
 
   // ── end-to-end workflow ────────────────────────────────────────────
