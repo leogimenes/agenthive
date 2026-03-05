@@ -15,7 +15,9 @@ import { AgentDetail } from './components/AgentDetail.js';
 import { HelpOverlay } from './components/HelpOverlay.js';
 import { TranscriptPanel } from './components/TranscriptPanel.js';
 import { EpicTreePanel } from './components/EpicTreePanel.js';
-import { flattenTree, buildEpicTree } from './utils/epicTree.js';
+import { EpicDispatchPanel } from './components/EpicDispatchPanel.js';
+import type { EpicAction } from './components/EpicDispatchPanel.js';
+import { flattenTree, buildEpicTree, getEpicReadyTasks } from './utils/epicTree.js';
 import { appendMessage, resolveChatPath } from '../core/chat.js';
 import { resolveHivePath, resolveAllAgents, loadConfig, resolveHiveRoot } from '../core/config.js';
 import { dispatchTask, loadPlan, savePlan } from '../core/plan.js';
@@ -69,6 +71,9 @@ export function App({ cwd }: AppProps): React.ReactElement {
   const [treeSelectedIndex, setTreeSelectedIndex] = useState(0);
   const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
   const [treeScroll, setTreeScroll] = useState(0);
+  const [epicDetailMode, setEpicDetailMode] = useState(false);
+  const [epicConfirmAction, setEpicConfirmAction] = useState<EpicAction | null>(null);
+  const [pausedEpics, setPausedEpics] = useState<Set<string>>(new Set());
 
   // Computed
   const agentNames = status.agents.map((a) => a.name);
@@ -408,13 +413,103 @@ export function App({ cwd }: AppProps): React.ReactElement {
 
     // Epic tree panel keys
     if (activePanel === 'tree') {
-      if (key.escape || input === 'e') {
-        setActivePanel('status');
-        return;
-      }
       // Compute rows for navigation
       const treeNodes = buildEpicTree(planData.tasks);
       const treeRows = flattenTree(treeNodes, treeExpanded);
+      const selectedRow = treeRows[treeSelectedIndex];
+      const selectedEpicId = selectedRow?.node.task.id;
+
+      // Epic detail / dispatch mode
+      if (epicDetailMode) {
+        // Handle confirmation prompt
+        if (epicConfirmAction) {
+          if (input === 'y' || input === 'Y') {
+            // Execute the confirmed action
+            if (epicConfirmAction === 'start' && selectedEpicId) {
+              const readyTasks = getEpicReadyTasks(planData.tasks, selectedEpicId);
+              if (readyTasks.length > 0) {
+                try {
+                  const hivePath = resolveHivePath(cwd);
+                  const config = loadConfig(cwd);
+                  const hiveRoot = resolveHiveRoot(cwd);
+                  const plan = loadPlan(hivePath);
+                  if (plan) {
+                    const chatFilePath = resolveChatPath(hivePath);
+                    const allAgents = resolveAllAgents(config, hiveRoot);
+                    for (const t of readyTasks) {
+                      const planTask = plan.tasks.find((pt) => pt.id === t.id);
+                      if (planTask && planTask.status === 'ready') {
+                        const agent = allAgents.find((a) => a.name === planTask.target);
+                        const role = agent?.chatRole ?? planTask.target.toUpperCase();
+                        dispatchTask(chatFilePath, planTask, role);
+                      }
+                    }
+                    savePlan(hivePath, plan);
+                  }
+                } catch {
+                  // Silently ignore
+                }
+              }
+            } else if (epicConfirmAction === 'pause' && selectedEpicId) {
+              setPausedEpics((prev) => {
+                const next = new Set(prev);
+                if (next.has(selectedEpicId)) {
+                  next.delete(selectedEpicId);
+                } else {
+                  next.add(selectedEpicId);
+                }
+                return next;
+              });
+            } else if (epicConfirmAction === 'deliver' && selectedEpicId) {
+              try {
+                const hivePath = resolveHivePath(cwd);
+                const chatFilePath = resolveChatPath(hivePath);
+                appendMessage(
+                  chatFilePath,
+                  'USER',
+                  'REQUEST',
+                  `@ALL deliver epic ${selectedEpicId}: trigger completion workflow`,
+                );
+              } catch {
+                // Silently ignore
+              }
+            }
+            setEpicConfirmAction(null);
+            return;
+          }
+          if (input === 'n' || input === 'N' || key.escape) {
+            setEpicConfirmAction(null);
+            return;
+          }
+          return;
+        }
+
+        // Actions in detail mode
+        if (key.escape) {
+          setEpicDetailMode(false);
+          return;
+        }
+        if (input === 's') {
+          setEpicConfirmAction('start');
+          return;
+        }
+        if (input === 'p') {
+          setEpicConfirmAction('pause');
+          return;
+        }
+        if (input === 'd') {
+          setEpicConfirmAction('deliver');
+          return;
+        }
+        return;
+      }
+
+      // Tree navigation mode
+      if (key.escape || input === 'e') {
+        setActivePanel('status');
+        setEpicDetailMode(false);
+        return;
+      }
       if (input === 'j' || key.downArrow) {
         const next = Math.min(treeSelectedIndex + 1, treeRows.length - 1);
         setTreeSelectedIndex(next);
@@ -431,8 +526,8 @@ export function App({ cwd }: AppProps): React.ReactElement {
         }
         return;
       }
-      if (input === ' ' || key.return) {
-        const selectedRow = treeRows[treeSelectedIndex];
+      if (input === ' ') {
+        // Space: expand/collapse
         if (selectedRow && selectedRow.node.children.length > 0) {
           const taskId = selectedRow.node.task.id;
           setTreeExpanded((prev) => {
@@ -444,6 +539,14 @@ export function App({ cwd }: AppProps): React.ReactElement {
             }
             return next;
           });
+        }
+        return;
+      }
+      if (key.return) {
+        // Enter: open epic detail/dispatch panel
+        if (selectedRow) {
+          setEpicDetailMode(true);
+          setEpicConfirmAction(null);
         }
         return;
       }
@@ -511,14 +614,27 @@ export function App({ cwd }: AppProps): React.ReactElement {
         />
 
         {activePanel === 'tree' ? (
-          <EpicTreePanel
-            tasks={planData.tasks}
-            selectedIndex={treeSelectedIndex}
-            focused={true}
-            scrollOffset={treeScroll}
-            maxVisible={planMaxVisible}
-            expanded={treeExpanded}
-          />
+          epicDetailMode ? (
+            <EpicDispatchPanel
+              tasks={planData.tasks}
+              selectedEpicId={
+                flattenTree(buildEpicTree(planData.tasks), treeExpanded)[treeSelectedIndex]
+                  ?.node.task.id ?? ''
+              }
+              focused={true}
+              confirmAction={epicConfirmAction}
+              pausedEpics={pausedEpics}
+            />
+          ) : (
+            <EpicTreePanel
+              tasks={planData.tasks}
+              selectedIndex={treeSelectedIndex}
+              focused={true}
+              scrollOffset={treeScroll}
+              maxVisible={planMaxVisible}
+              expanded={treeExpanded}
+            />
+          )
         ) : activePanel === 'transcript' ? (
           <TranscriptPanel
             agent={status.agents[transcriptAgent]}

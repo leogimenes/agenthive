@@ -152,3 +152,30 @@ export const STATUS_ICON: Record<string, string> = {
   failed: '✗',
   blocked: '◉',
 };
+
+/**
+ * Get all descendant tasks under an epic/parent (including itself),
+ * traversing the parent→child relationship in `tasks`.
+ */
+export function getEpicDescendants(tasks: PlanTask[], epicId: string): PlanTask[] {
+  const result: PlanTask[] = [];
+  const taskMap = new Map(tasks.map((t) => [t.id, t]));
+
+  function visit(id: string): void {
+    const task = taskMap.get(id);
+    if (task) result.push(task);
+    for (const t of tasks) {
+      if (t.parent === id) visit(t.id);
+    }
+  }
+
+  visit(epicId);
+  return result;
+}
+
+/**
+ * Get all ready tasks (status === 'ready') that are descendants of the given epic.
+ */
+export function getEpicReadyTasks(tasks: PlanTask[], epicId: string): PlanTask[] {
+  return getEpicDescendants(tasks, epicId).filter((t) => t.status === 'ready' && t.id !== epicId);
+}
