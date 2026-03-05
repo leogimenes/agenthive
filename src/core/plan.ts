@@ -44,10 +44,53 @@ export function loadPlan(hivePath: string): Plan | null {
 }
 
 /**
+ * Update parent task statuses based on their children, bottom-up.
+ * Iterates until stable to handle multi-level hierarchies (epic → story → task).
+ */
+function updateParentStatuses(plan: Plan): void {
+  // Find all task IDs that are parents (have at least one child referencing them)
+  const parentIds = new Set(
+    plan.tasks.filter((t) => t.parent).map((t) => t.parent!),
+  );
+  if (parentIds.size === 0) return;
+
+  const taskMap = new Map(plan.tasks.map((t) => [t.id, t]));
+  const now = new Date().toISOString();
+
+  // Iterate until stable to propagate multi-level hierarchy changes
+  let changed = true;
+  let iters = 0;
+  while (changed && iters < 10) {
+    changed = false;
+    iters++;
+
+    for (const parentId of parentIds) {
+      const parent = taskMap.get(parentId);
+      if (!parent) continue;
+
+      const ps = computeParentStatus(plan, parentId);
+      // Only update if parent has children (total > 0)
+      if (ps.total === 0) continue;
+
+      const newStatus = ps.status as import('../types/plan.js').TaskStatus;
+      if (parent.status !== newStatus) {
+        parent.status = newStatus;
+        parent.updated_at = now;
+        changed = true;
+      }
+    }
+  }
+}
+
+/**
  * Save the plan to .hive/plan.json with atomic write.
+ * Auto-updates parent statuses from children before writing.
  * Tasks are sorted by ID for clean diffs.
  */
 export function savePlan(hivePath: string, plan: Plan): void {
+  // Auto-update parent statuses derived from children
+  updateParentStatuses(plan);
+
   plan.updated_at = new Date().toISOString();
   plan.tasks.sort((a, b) => a.id.localeCompare(b.id));
 
@@ -264,10 +307,19 @@ export function promoteReadyTasks(plan: Plan): number {
   const doneIds = new Set(
     plan.tasks.filter((t) => t.status === 'done').map((t) => t.id),
   );
+  const taskMap = new Map(plan.tasks.map((t) => [t.id, t]));
   const now = new Date().toISOString();
   let promoted = 0;
 
   for (const task of plan.tasks) {
+    // Respect hierarchy: don't promote if parent is blocked
+    if (task.parent) {
+      const parent = taskMap.get(task.parent);
+      if (parent && parent.status === 'blocked') {
+        continue;
+      }
+    }
+
     if (
       task.status === 'open' &&
       task.depends_on.length > 0 &&
@@ -403,24 +455,44 @@ export function getChildTasks(plan: Plan, parentId: string): PlanTask[] {
 
 /**
  * Compute the rollup status for a parent task based on its children.
+ * Returns:
+ *   status: 'done' | 'blocked' | 'running' | 'ready' | 'open'
+ *   done, total, running, failed, blocked — progress counters
+ *
+ * Priority: blocked > done > running > ready > open
  */
 export function computeParentStatus(
   plan: Plan,
   parentId: string,
-): { status: string; done: number; total: number } {
+): { status: string; done: number; total: number; running: number; failed: number; blocked: number } {
   const children = getChildTasks(plan, parentId);
-  if (children.length === 0) return { status: 'open', done: 0, total: 0 };
+  if (children.length === 0) {
+    return { status: 'open', done: 0, total: 0, running: 0, failed: 0, blocked: 0 };
+  }
 
   const done = children.filter((c) => c.status === 'done').length;
   const failed = children.filter((c) => c.status === 'failed').length;
+  const blocked = children.filter((c) => c.status === 'blocked').length;
   const running = children.filter((c) =>
     c.status === 'running' || c.status === 'dispatched',
   ).length;
+  const ready = children.filter((c) => c.status === 'ready').length;
+  const total = children.length;
 
-  if (done === children.length) return { status: 'done', done, total: children.length };
-  if (failed > 0) return { status: 'warning', done, total: children.length };
-  if (running > 0) return { status: 'running', done, total: children.length };
-  return { status: 'progress', done, total: children.length };
+  let status: string;
+  if (failed > 0 || blocked > 0) {
+    status = 'blocked';
+  } else if (done === total) {
+    status = 'done';
+  } else if (running > 0) {
+    status = 'running';
+  } else if (ready > 0) {
+    status = 'ready';
+  } else {
+    status = 'open';
+  }
+
+  return { status, done, total, running, failed, blocked };
 }
 
 /**

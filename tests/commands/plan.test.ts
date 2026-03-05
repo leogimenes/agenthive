@@ -183,6 +183,18 @@ describe('hive plan (CLI integration)', () => {
       expect(plan.tasks).toHaveLength(1);
       expect(plan.tasks[0].title).toBe('Build API');
     });
+
+    it('should show progress fraction for parent tasks in board', () => {
+      // Add a parent story and two child tasks
+      runCli('plan add backend "PAGINATION" --id STORY-01');
+      runCli('plan add backend "Task one" --id TASK-01 --parent STORY-01');
+      runCli('plan add backend "Task two" --id TASK-02 --parent STORY-01');
+      // Mark one child done
+      runCli('plan update TASK-01 --status done');
+      const { stdout } = runCli('plan');
+      // Board should show progress fraction like (1/2) for the parent
+      expect(stdout).toContain('(1/2)');
+    });
   });
 
   // ── plan add (flag-based, backward compat) ──────────────────────────

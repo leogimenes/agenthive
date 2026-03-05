@@ -374,6 +374,11 @@ async function runBoard(
   // Find max column height
   const maxHeight = Math.max(...activeColumns.map((c) => grouped[c].length));
 
+  // Build set of parent IDs for progress fraction display
+  const parentIds = new Set(
+    tasks.filter((t) => t.parent).map((t) => t.parent!),
+  );
+
   for (let row = 0; row < maxHeight; row++) {
     const line = activeColumns
       .map((col) => {
@@ -383,6 +388,15 @@ async function runBoard(
         const icon = STATUS_ICON[task.status] ?? '?';
         const color = STATUS_COLOR[task.status] ?? chalk.white;
         const priColor = PRIORITY_COLOR[task.priority] ?? chalk.white;
+
+        // Show progress fraction for parent tasks (those with children)
+        if (parentIds.has(task.id)) {
+          const ps = computeParentStatus(plan, task.id);
+          const fraction = `(${ps.done}/${ps.total})`;
+          const cell = `${icon} ${task.id} ${fraction}`;
+          return color(icon) + ' ' + task.id + ' ' + chalk.gray(fraction) + ' '.repeat(Math.max(0, COL_WIDTH - cell.length - 1));
+        }
+
         const cell = `${icon} ${task.id} ${task.priority}`;
         return pad('', 0) + color(icon) + ' ' + task.id + ' ' + priColor(task.priority) + ' '.repeat(Math.max(0, COL_WIDTH - cell.length - 1));
       })

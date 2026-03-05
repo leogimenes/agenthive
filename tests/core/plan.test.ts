@@ -112,6 +112,65 @@ describe('plan', () => {
     });
   });
 
+  // ── savePlan auto-updates parent statuses ───────────────────────────
+
+  describe('savePlan auto-updates parent statuses', () => {
+    it('should set parent status to done when all children are done', () => {
+      const plan = makePlan([
+        makeTask({ id: 'story-1', status: 'open' }),
+        makeTask({ id: 'task-1', parent: 'story-1', status: 'done' }),
+        makeTask({ id: 'task-2', parent: 'story-1', status: 'done' }),
+      ]);
+      savePlan(hivePath, plan);
+      const loaded = loadPlan(hivePath);
+      expect(loaded!.tasks.find((t) => t.id === 'story-1')!.status).toBe('done');
+    });
+
+    it('should set parent status to blocked when a child has failed', () => {
+      const plan = makePlan([
+        makeTask({ id: 'story-1', status: 'open' }),
+        makeTask({ id: 'task-1', parent: 'story-1', status: 'failed' }),
+        makeTask({ id: 'task-2', parent: 'story-1', status: 'open' }),
+      ]);
+      savePlan(hivePath, plan);
+      const loaded = loadPlan(hivePath);
+      expect(loaded!.tasks.find((t) => t.id === 'story-1')!.status).toBe('blocked');
+    });
+
+    it('should set parent status to running when a child is running', () => {
+      const plan = makePlan([
+        makeTask({ id: 'story-1', status: 'open' }),
+        makeTask({ id: 'task-1', parent: 'story-1', status: 'running' }),
+        makeTask({ id: 'task-2', parent: 'story-1', status: 'open' }),
+      ]);
+      savePlan(hivePath, plan);
+      const loaded = loadPlan(hivePath);
+      expect(loaded!.tasks.find((t) => t.id === 'story-1')!.status).toBe('running');
+    });
+
+    it('should propagate parent status up multi-level hierarchy', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic-1', status: 'open' }),
+        makeTask({ id: 'story-1', parent: 'epic-1', status: 'open' }),
+        makeTask({ id: 'task-1', parent: 'story-1', status: 'done' }),
+        makeTask({ id: 'task-2', parent: 'story-1', status: 'done' }),
+      ]);
+      savePlan(hivePath, plan);
+      const loaded = loadPlan(hivePath);
+      expect(loaded!.tasks.find((t) => t.id === 'story-1')!.status).toBe('done');
+      expect(loaded!.tasks.find((t) => t.id === 'epic-1')!.status).toBe('done');
+    });
+
+    it('should not change status of tasks with no children', () => {
+      const plan = makePlan([
+        makeTask({ id: 'task-1', status: 'dispatched' }),
+      ]);
+      savePlan(hivePath, plan);
+      const loaded = loadPlan(hivePath);
+      expect(loaded!.tasks.find((t) => t.id === 'task-1')!.status).toBe('dispatched');
+    });
+  });
+
   // ── createPlan ──────────────────────────────────────────────────────
 
   describe('createPlan', () => {
@@ -378,6 +437,24 @@ describe('plan', () => {
       promoteReadyTasks(plan);
       expect(plan.tasks.find((t) => t.id === 'b')!.status).toBe('blocked');
     });
+
+    it('should not promote child task to ready when parent is blocked', () => {
+      const plan = makePlan([
+        makeTask({ id: 'story-1', status: 'blocked', depends_on: [] }),
+        makeTask({ id: 'task-1', parent: 'story-1', status: 'open', depends_on: [] }),
+      ]);
+      promoteReadyTasks(plan);
+      expect(plan.tasks.find((t) => t.id === 'task-1')!.status).toBe('open');
+    });
+
+    it('should promote child task to ready when parent is not blocked', () => {
+      const plan = makePlan([
+        makeTask({ id: 'story-1', status: 'open', depends_on: [] }),
+        makeTask({ id: 'task-1', parent: 'story-1', status: 'open', depends_on: [] }),
+      ]);
+      promoteReadyTasks(plan);
+      expect(plan.tasks.find((t) => t.id === 'task-1')!.status).toBe('ready');
+    });
   });
 
   // ── extractTaskId ──────────────────────────────────────────────────
@@ -569,14 +646,59 @@ describe('plan', () => {
       expect(ps.status).toBe('running');
     });
 
-    it('should compute parent status: warning on failed child', () => {
+    it('should compute parent status: blocked when a child has failed', () => {
       const plan = makePlan([
         makeTask({ id: 'parent' }),
         makeTask({ id: 'child-1', parent: 'parent', status: 'done' }),
         makeTask({ id: 'child-2', parent: 'parent', status: 'failed' }),
       ]);
       const ps = computeParentStatus(plan, 'parent');
-      expect(ps.status).toBe('warning');
+      expect(ps.status).toBe('blocked');
+    });
+
+    it('should compute parent status: ready when some children are ready (no running/failed)', () => {
+      const plan = makePlan([
+        makeTask({ id: 'parent' }),
+        makeTask({ id: 'child-1', parent: 'parent', status: 'done' }),
+        makeTask({ id: 'child-2', parent: 'parent', status: 'ready' }),
+      ]);
+      const ps = computeParentStatus(plan, 'parent');
+      expect(ps.status).toBe('ready');
+    });
+
+    it('should compute parent status: open when all children are open', () => {
+      const plan = makePlan([
+        makeTask({ id: 'parent' }),
+        makeTask({ id: 'child-1', parent: 'parent', status: 'open' }),
+      ]);
+      const ps = computeParentStatus(plan, 'parent');
+      expect(ps.status).toBe('open');
+    });
+
+    it('should include running, failed, blocked counts in progress', () => {
+      const plan = makePlan([
+        makeTask({ id: 'parent' }),
+        makeTask({ id: 'child-1', parent: 'parent', status: 'done' }),
+        makeTask({ id: 'child-2', parent: 'parent', status: 'running' }),
+        makeTask({ id: 'child-3', parent: 'parent', status: 'failed' }),
+        makeTask({ id: 'child-4', parent: 'parent', status: 'blocked' }),
+      ]);
+      const ps = computeParentStatus(plan, 'parent');
+      expect(ps.done).toBe(1);
+      expect(ps.total).toBe(4);
+      expect(ps.running).toBe(1);
+      expect(ps.failed).toBe(1);
+      expect(ps.blocked).toBe(1);
+    });
+
+    it('should prioritise blocked over running in parent status', () => {
+      const plan = makePlan([
+        makeTask({ id: 'parent' }),
+        makeTask({ id: 'child-1', parent: 'parent', status: 'running' }),
+        makeTask({ id: 'child-2', parent: 'parent', status: 'failed' }),
+      ]);
+      const ps = computeParentStatus(plan, 'parent');
+      expect(ps.status).toBe('blocked');
     });
   });
 
