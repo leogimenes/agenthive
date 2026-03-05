@@ -54,6 +54,10 @@ vi.mock('../../src/core/notify.js', () => ({
   notify: vi.fn(),
 }));
 
+vi.mock('../../src/core/transcripts.js', () => ({
+  rotateTranscripts: vi.fn().mockReturnValue({ deleted: 0 }),
+}));
+
 // spawn mock — by default emits 'close' with exit code 0 via process.nextTick
 // stdout emits no data (parseClaudeCost returns fallback = agent.budget)
 vi.mock('node:child_process', () => ({
@@ -98,6 +102,7 @@ import {
   resetTaskForRetry,
 } from '../../src/core/plan.js';
 import { notify } from '../../src/core/notify.js';
+import { rotateTranscripts } from '../../src/core/transcripts.js';
 import { spawn } from 'node:child_process';
 import { AgentLoop } from '../../src/core/polling.js';
 
@@ -130,6 +135,7 @@ function makeHiveConfig(overrides: Partial<HiveConfig> = {}): HiveConfig {
       skip_permissions: true,
       notifications: false,
       notify_on: ['DONE', 'BLOCKER'],
+      transcript_retention: 20,
     },
     agents: {},
     chat: {
@@ -777,6 +783,111 @@ describe('AgentLoop', () => {
       expect(spawnOptions.env?.HIVE_AGENT_NAME).toBe('qa');
       expect(spawnOptions.env?.HIVE_AGENT_ROLE).toBe('QA');
       expect(spawnOptions.env?.HIVE_CHAT_FILE).toContain('chat.md');
+    });
+
+    it('should NOT pass --no-session-persistence flag to claude (BE-11: session persistence enabled)', async () => {
+      vi.mocked(findRequests).mockReturnValue([
+        { role: 'PM', type: 'REQUEST', body: 'run task', lineNumber: 5 },
+      ]);
+      mockSpawnExit(0);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      const args = vi.mocked(spawn).mock.calls[0][1] as string[];
+      expect(args).not.toContain('--no-session-persistence');
+    });
+  });
+
+  // ── cycle() — transcript rotation ─────────────────────────────────────────
+
+  describe('cycle() — transcript rotation', () => {
+    it('should call rotateTranscripts at the start of each cycle', async () => {
+      vi.mocked(findRequests).mockReturnValue([]);
+      vi.mocked(rotateTranscripts).mockReturnValue({ deleted: 0 });
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(vi.mocked(rotateTranscripts)).toHaveBeenCalled();
+    });
+
+    it('should call rotateTranscripts with the agent worktree path', async () => {
+      vi.mocked(findRequests).mockReturnValue([]);
+      vi.mocked(rotateTranscripts).mockReturnValue({ deleted: 0 });
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      const calls = vi.mocked(rotateTranscripts).mock.calls;
+      expect(calls[0][0]).toBe(agent.worktreePath);
+    });
+
+    it('should call rotateTranscripts with transcript_retention from config', async () => {
+      const configWith10 = makeHiveConfig({
+        defaults: {
+          poll: 30,
+          budget: 2,
+          daily_max: 20,
+          model: 'sonnet',
+          skip_permissions: true,
+          notifications: false,
+          notify_on: ['DONE', 'BLOCKER'],
+          transcript_retention: 10,
+        },
+      });
+      const loopWith10 = new AgentLoop(agent, configWith10, hivePath);
+      vi.mocked(findRequests).mockReturnValue([]);
+      vi.mocked(rotateTranscripts).mockReturnValue({ deleted: 0 });
+
+      const promise = callCycle(loopWith10);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      const calls = vi.mocked(rotateTranscripts).mock.calls;
+      expect(calls[0][1]).toBe(10);
+    });
+
+    it('should call rotateTranscripts with default retention of 20', async () => {
+      // hiveConfig has transcript_retention: 20 (default)
+      vi.mocked(findRequests).mockReturnValue([]);
+      vi.mocked(rotateTranscripts).mockReturnValue({ deleted: 0 });
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      const calls = vi.mocked(rotateTranscripts).mock.calls;
+      expect(calls[0][1]).toBe(20);
+    });
+
+    it('should call rotateTranscripts once per cycle even when idle', async () => {
+      // No requests found — idle cycle
+      vi.mocked(findRequests).mockReturnValue([]);
+      vi.mocked(rotateTranscripts).mockReturnValue({ deleted: 0 });
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      // Rotation should still happen even with no work to do
+      expect(vi.mocked(rotateTranscripts)).toHaveBeenCalledTimes(1);
+    });
+
+    it('should call rotateTranscripts even when budget is exhausted', async () => {
+      vi.mocked(checkDailyBudget).mockReturnValue({ allowed: false, spent: 20 });
+      vi.mocked(findRequests).mockReturnValue([]);
+      vi.mocked(rotateTranscripts).mockReturnValue({ deleted: 0 });
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      // Rotation is a maintenance task that should happen regardless of budget
+      expect(vi.mocked(rotateTranscripts)).toHaveBeenCalled();
     });
   });
 

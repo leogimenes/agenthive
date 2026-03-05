@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   mkdtempSync,
   mkdirSync,
@@ -6,7 +6,7 @@ import {
   writeFileSync,
   existsSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   findTranscriptDir,
@@ -15,7 +15,20 @@ import {
   getToolIcon,
   formatDuration,
   rotateTranscriptDir,
+  rotateTranscripts,
 } from '../../src/core/transcripts.js';
+
+// ── Mocks ────────────────────────────────────────────────────────────
+
+// Mock node:os so we can control homedir() in findTranscriptDir tests.
+// vi.mock is hoisted, so it runs before imports are evaluated.
+vi.mock('node:os', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('node:os')>();
+  return { ...mod, homedir: vi.fn(() => mod.homedir()) };
+});
+
+// Grab the mocked module so tests can call mockReturnValue on homedir.
+const { homedir: homedirMock } = await import('node:os');
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -98,8 +111,92 @@ describe('transcripts', () => {
   // ── findTranscriptDir ──────────────────────────────────────────────
 
   describe('findTranscriptDir', () => {
+    afterEach(() => {
+      vi.mocked(homedirMock).mockReset();
+    });
+
     it('should return undefined for non-existent path', () => {
       const result = findTranscriptDir('/nonexistent/path/project');
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined when ~/.claude/projects does not exist', () => {
+      // Point homedir at tmpDir — no .claude/projects inside it
+      vi.mocked(homedirMock).mockReturnValue(tmpDir);
+
+      const result = findTranscriptDir('/some/project');
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined when projects dir exists but encoded path does not', () => {
+      // Create ~/.claude/projects but NOT the encoded project directory
+      const claudeProjectsDir = join(tmpDir, '.claude', 'projects');
+      mkdirSync(claudeProjectsDir, { recursive: true });
+      vi.mocked(homedirMock).mockReturnValue(tmpDir);
+
+      const result = findTranscriptDir('/project/that/does/not/exist');
+      expect(result).toBeUndefined();
+    });
+
+    it('should return the encoded path when the transcript directory exists', () => {
+      // Encode the worktree path the same way the implementation does:
+      // absolute path with every '/' replaced by '-'
+      const worktreePath = join(tmpDir, 'my-project');
+      const absPath = resolve(worktreePath);
+      const encoded = absPath.replace(/\//g, '-');
+
+      const claudeProjectsDir = join(tmpDir, '.claude', 'projects');
+      const expectedDir = join(claudeProjectsDir, encoded);
+      mkdirSync(expectedDir, { recursive: true });
+
+      vi.mocked(homedirMock).mockReturnValue(tmpDir);
+
+      const result = findTranscriptDir(worktreePath);
+      expect(result).toBe(expectedDir);
+    });
+
+    it('should resolve absolute paths correctly before encoding', () => {
+      // Provide an absolute worktree path and verify the expected encoded dir is returned
+      const absWorktreePath = join(tmpDir, 'agent', 'backend');
+      const encoded = absWorktreePath.replace(/\//g, '-');
+
+      const claudeProjectsDir = join(tmpDir, '.claude', 'projects');
+      const expectedDir = join(claudeProjectsDir, encoded);
+      mkdirSync(expectedDir, { recursive: true });
+
+      vi.mocked(homedirMock).mockReturnValue(tmpDir);
+
+      const result = findTranscriptDir(absWorktreePath);
+      expect(result).toBe(expectedDir);
+    });
+
+    it('should encode path by replacing all slashes with dashes', () => {
+      // Verify encoding: /home/user/project -> -home-user-project
+      const worktreePath = '/home/user/project';
+      const expectedEncoded = '-home-user-project';
+
+      const claudeProjectsDir = join(tmpDir, '.claude', 'projects');
+      const expectedDir = join(claudeProjectsDir, expectedEncoded);
+      mkdirSync(expectedDir, { recursive: true });
+
+      vi.mocked(homedirMock).mockReturnValue(tmpDir);
+
+      const result = findTranscriptDir(worktreePath);
+      expect(result).toBe(expectedDir);
+    });
+
+    it('should return undefined when a sibling encoded path exists but not the target', () => {
+      // Create a different project's encoded directory
+      const otherPath = '/home/user/other-project';
+      const otherEncoded = otherPath.replace(/\//g, '-');
+
+      const claudeProjectsDir = join(tmpDir, '.claude', 'projects');
+      mkdirSync(join(claudeProjectsDir, otherEncoded), { recursive: true });
+
+      vi.mocked(homedirMock).mockReturnValue(tmpDir);
+
+      // Look up a completely different project
+      const result = findTranscriptDir('/home/user/my-project');
       expect(result).toBeUndefined();
     });
   });
@@ -514,6 +611,166 @@ describe('transcripts', () => {
       for (let i = 1; i <= 5; i++) {
         expect(existsSync(join(tmpDir, `session-${i}.jsonl`))).toBe(false);
       }
+    });
+
+    it('should handle retention=1 by keeping only the single newest session', () => {
+      function createSession2(dir: string, id: string, timestamp: string): void {
+        writeFileSync(
+          join(dir, `${id}.jsonl`),
+          makeEntry('user', timestamp, [{ type: 'text', text: 'x' }]),
+        );
+      }
+      createSession2(tmpDir, 'alpha', '2026-02-01T08:00:00Z');
+      createSession2(tmpDir, 'beta', '2026-02-02T08:00:00Z');
+      createSession2(tmpDir, 'gamma', '2026-02-03T08:00:00Z');
+
+      const result = rotateTranscriptDir(tmpDir, 1);
+      expect(result.deleted).toBe(2);
+
+      expect(existsSync(join(tmpDir, 'gamma.jsonl'))).toBe(true);
+      expect(existsSync(join(tmpDir, 'beta.jsonl'))).toBe(false);
+      expect(existsSync(join(tmpDir, 'alpha.jsonl'))).toBe(false);
+    });
+
+    it('should handle empty transcript directory gracefully', () => {
+      // tmpDir is empty for this test (no sessions created)
+      const result = rotateTranscriptDir(tmpDir, 5);
+      expect(result.deleted).toBe(0);
+    });
+  });
+
+  // ── rotateTranscripts ──────────────────────────────────────────────
+
+  describe('rotateTranscripts', () => {
+    afterEach(() => {
+      vi.mocked(homedirMock).mockReset();
+    });
+
+    it('should return 0 deleted when transcript dir does not exist for worktree', () => {
+      // Point homedir at tmpDir — no .claude/projects inside it
+      vi.mocked(homedirMock).mockReturnValue(tmpDir);
+
+      const result = rotateTranscripts('/some/worktree/path', 20);
+      expect(result.deleted).toBe(0);
+    });
+
+    it('should return 0 deleted when worktree is not registered in claude projects', () => {
+      // Create .claude/projects but no matching encoded path
+      mkdirSync(join(tmpDir, '.claude', 'projects'), { recursive: true });
+      vi.mocked(homedirMock).mockReturnValue(tmpDir);
+
+      const result = rotateTranscripts('/nonexistent/worktree', 20);
+      expect(result.deleted).toBe(0);
+    });
+
+    it('should rotate sessions in the found transcript dir', () => {
+      // Set up a fake worktree path and its encoded transcript directory
+      const worktreePath = '/fake/agent/backend';
+      const encoded = worktreePath.replace(/\//g, '-'); // '-fake-agent-backend'
+
+      const claudeProjectsDir = join(tmpDir, '.claude', 'projects');
+      const transcriptDir = join(claudeProjectsDir, encoded);
+      mkdirSync(transcriptDir, { recursive: true });
+
+      vi.mocked(homedirMock).mockReturnValue(tmpDir);
+
+      // Create 3 sessions in the transcript dir (old first, new last)
+      for (let i = 1; i <= 3; i++) {
+        const ts = `2026-03-0${i}T10:00:00Z`;
+        writeFileSync(
+          join(transcriptDir, `session-${i}.jsonl`),
+          makeEntry('user', ts, [{ type: 'text', text: 'hi' }]),
+        );
+      }
+
+      // Keep only 2 newest
+      const result = rotateTranscripts(worktreePath, 2);
+      expect(result.deleted).toBe(1);
+
+      expect(existsSync(join(transcriptDir, 'session-3.jsonl'))).toBe(true);
+      expect(existsSync(join(transcriptDir, 'session-2.jsonl'))).toBe(true);
+      expect(existsSync(join(transcriptDir, 'session-1.jsonl'))).toBe(false);
+    });
+
+    it('should use default retention of 20 when not specified', () => {
+      const worktreePath = '/fake/agent/qa';
+      const encoded = worktreePath.replace(/\//g, '-');
+
+      const claudeProjectsDir = join(tmpDir, '.claude', 'projects');
+      const transcriptDir = join(claudeProjectsDir, encoded);
+      mkdirSync(transcriptDir, { recursive: true });
+
+      vi.mocked(homedirMock).mockReturnValue(tmpDir);
+
+      // Create exactly 20 sessions — none should be deleted with default retention
+      for (let i = 1; i <= 20; i++) {
+        const ts = `2026-03-${String(i).padStart(2, '0')}T10:00:00Z`;
+        writeFileSync(
+          join(transcriptDir, `session-${i}.jsonl`),
+          makeEntry('user', ts, [{ type: 'text', text: 'hi' }]),
+        );
+      }
+
+      // Default retention = 20, exactly at limit — nothing deleted
+      const result = rotateTranscripts(worktreePath);
+      expect(result.deleted).toBe(0);
+    });
+
+    it('should delete sessions beyond default retention of 20', () => {
+      const worktreePath = '/fake/agent/frontend';
+      const encoded = worktreePath.replace(/\//g, '-');
+
+      const claudeProjectsDir = join(tmpDir, '.claude', 'projects');
+      const transcriptDir = join(claudeProjectsDir, encoded);
+      mkdirSync(transcriptDir, { recursive: true });
+
+      vi.mocked(homedirMock).mockReturnValue(tmpDir);
+
+      // Create 23 sessions — 3 should be deleted with default retention (20)
+      for (let i = 1; i <= 23; i++) {
+        const ts = `2026-03-${String(i).padStart(2, '0')}T10:00:00Z`;
+        writeFileSync(
+          join(transcriptDir, `session-${i}.jsonl`),
+          makeEntry('user', ts, [{ type: 'text', text: 'hi' }]),
+        );
+      }
+
+      const result = rotateTranscripts(worktreePath);
+      expect(result.deleted).toBe(3);
+    });
+
+    it('should also clean up tool-results dirs for rotated sessions', () => {
+      const worktreePath = '/fake/agent/pm';
+      const encoded = worktreePath.replace(/\//g, '-');
+
+      const claudeProjectsDir = join(tmpDir, '.claude', 'projects');
+      const transcriptDir = join(claudeProjectsDir, encoded);
+      mkdirSync(transcriptDir, { recursive: true });
+
+      vi.mocked(homedirMock).mockReturnValue(tmpDir);
+
+      // Create 2 sessions with matching tool-results dirs
+      writeFileSync(
+        join(transcriptDir, 'old-session.jsonl'),
+        makeEntry('user', '2026-01-01T10:00:00Z', [{ type: 'text', text: 'old' }]),
+      );
+      writeFileSync(
+        join(transcriptDir, 'new-session.jsonl'),
+        makeEntry('user', '2026-01-02T10:00:00Z', [{ type: 'text', text: 'new' }]),
+      );
+
+      const toolResultsDir = join(transcriptDir, 'tool-results');
+      mkdirSync(join(toolResultsDir, 'old-session'), { recursive: true });
+      mkdirSync(join(toolResultsDir, 'new-session'), { recursive: true });
+
+      // Keep only 1 newest — old-session should be cleaned up
+      const result = rotateTranscripts(worktreePath, 1);
+      expect(result.deleted).toBe(1);
+
+      expect(existsSync(join(transcriptDir, 'old-session.jsonl'))).toBe(false);
+      expect(existsSync(join(toolResultsDir, 'old-session'))).toBe(false);
+      expect(existsSync(join(transcriptDir, 'new-session.jsonl'))).toBe(true);
+      expect(existsSync(join(toolResultsDir, 'new-session'))).toBe(true);
     });
   });
 });
