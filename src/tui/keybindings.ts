@@ -22,6 +22,7 @@ export const HELP_ENTRIES = [
   { key: 'q / Ctrl+C', desc: 'Quit TUI' },
   { key: 'Tab', desc: 'Cycle panels' },
   { key: '1 / 2 / 3 / 4', desc: 'Jump to panel (status/chat/plan/input)' },
+  { key: 'c', desc: 'Toggle / focus chat panel' },
   { key: 'p', desc: 'Jump to plan panel' },
   { key: 'd', desc: 'Focus dispatch input' },
   { key: '?', desc: 'Toggle help overlay' },

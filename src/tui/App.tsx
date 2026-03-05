@@ -244,6 +244,7 @@ export function App({ cwd }: AppProps): React.ReactElement {
     if (input === '2') { setActivePanel('chat'); return; }
     if (input === '3') { setActivePanel('plan'); return; }
     if (input === '4') { setActivePanel('input'); return; }
+    if (input === 'c') { setActivePanel('chat'); return; }
     if (input === 'p') { setActivePanel('plan'); return; }
     if (input === 'd' && activePanel !== 'plan') {
       setActivePanel('input');

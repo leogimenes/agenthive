@@ -14,7 +14,7 @@ export interface ChatState {
   newMessageIds: Set<number>;
 }
 
-function applyFilters(
+export function applyFilters(
   messages: ChatMessage[],
   filterRole?: string,
   filterType?: string,
