@@ -111,6 +111,22 @@ export interface TemplatesConfig {
   dir?: string;
 }
 
+/**
+ * Ordered steps that must all be satisfied before an epic is considered done.
+ *
+ * - all_tasks_done  All child tasks are in 'done' status.
+ * - tests_pass      Test suite passes (must be recorded externally on the epic).
+ * - pr_created      A pull request has been opened for the epic branch.
+ * - pr_merged       The pull request has been merged into the base branch.
+ * - released        A release/tag has been published.
+ */
+export type DefinitionOfDoneStep =
+  | 'all_tasks_done'
+  | 'tests_pass'
+  | 'pr_created'
+  | 'pr_merged'
+  | 'released';
+
 export interface DeliveryConfig {
   /** Delivery strategy. Default: 'manual'. */
   strategy: 'auto-merge' | 'pull-request' | 'manual';
@@ -124,8 +140,11 @@ export interface DeliveryConfig {
   /** Automatically create a release after delivery. Default: false. */
   auto_release: boolean;
 
-  /** Conditions that define task completion. Default: ['all_tasks_done']. */
-  definition_of_done: string[];
+  /**
+   * Ordered steps that must all be satisfied before an epic is considered
+   * complete. Steps are evaluated in order; all must pass. Default: ['all_tasks_done'].
+   */
+  definition_of_done: DefinitionOfDoneStep[];
 }
 
 

@@ -10,6 +10,7 @@ import type {
   HooksConfig,
   TemplatesConfig,
   DeliveryConfig,
+  DefinitionOfDoneStep,
 } from '../types/config.js';
 
 // ── Errors ──────────────────────────────────────────────────────────
@@ -34,6 +35,14 @@ export class HiveConfigValidationError extends Error {
 
 const HIVE_DIR = '.hive';
 const CONFIG_FILE = 'config.yaml';
+
+export const VALID_DOD_STEPS: readonly DefinitionOfDoneStep[] = [
+  'all_tasks_done',
+  'tests_pass',
+  'pr_created',
+  'pr_merged',
+  'released',
+] as const;
 
 const DEFAULT_DEFAULTS: DefaultsConfig = {
   poll: 60,
@@ -207,6 +216,21 @@ function validateAndNormalize(
       `delivery.strategy must be one of: ${validStrategies.join(', ')}.`,
     );
   }
+  const rawDodArray = toStringArray(rawDelivery.definition_of_done);
+  let definitionOfDone: DefinitionOfDoneStep[];
+  if (rawDodArray === undefined) {
+    definitionOfDone = ['all_tasks_done'];
+  } else {
+    for (const step of rawDodArray) {
+      if (!VALID_DOD_STEPS.includes(step as DefinitionOfDoneStep)) {
+        throw new HiveConfigValidationError(
+          `delivery.definition_of_done contains unknown step "${step}". Valid steps: ${VALID_DOD_STEPS.join(', ')}.`,
+        );
+      }
+    }
+    definitionOfDone = rawDodArray as DefinitionOfDoneStep[];
+  }
+
   const delivery: DeliveryConfig = {
     strategy: validStrategies.includes(strategy as (typeof validStrategies)[number])
       ? (strategy as DeliveryConfig['strategy'])
@@ -223,8 +247,7 @@ function validateAndNormalize(
       typeof rawDelivery.auto_release === 'boolean'
         ? rawDelivery.auto_release
         : false,
-    definition_of_done:
-      toStringArray(rawDelivery.definition_of_done) ?? ['all_tasks_done'],
+    definition_of_done: definitionOfDone,
   };
 
   return { session, defaults, agents, chat, hooks, templates, delivery };

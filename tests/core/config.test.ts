@@ -225,6 +225,24 @@ describe('config', () => {
       writeConfig({ ...minimalConfig, delivery: { strategy: 'invalid' } });
       expect(() => loadConfig(testDir)).toThrow(HiveConfigValidationError);
     });
+
+    it('should accept all valid definition_of_done steps', () => {
+      const validSteps = ['all_tasks_done', 'tests_pass', 'pr_created', 'pr_merged', 'released'];
+      writeConfig({ ...minimalConfig, delivery: { definition_of_done: validSteps } });
+      const config = loadConfig(testDir);
+      expect(config.delivery.definition_of_done).toEqual(validSteps);
+    });
+
+    it('should throw on unknown definition_of_done step', () => {
+      writeConfig({ ...minimalConfig, delivery: { definition_of_done: ['all_tasks_done', 'unknown_step'] } });
+      expect(() => loadConfig(testDir)).toThrow(HiveConfigValidationError);
+    });
+
+    it('should default definition_of_done to [all_tasks_done] when omitted', () => {
+      writeConfig(minimalConfig);
+      const config = loadConfig(testDir);
+      expect(config.delivery.definition_of_done).toEqual(['all_tasks_done']);
+    });
   });
 
   // ── resolveAgent ──────────────────────────────────────────────────

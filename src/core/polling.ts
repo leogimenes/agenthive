@@ -154,7 +154,7 @@ export class AgentLoop {
     if (plan && newMessages.length > 0) {
       const updates = reconcilePlanWithChat(plan, newMessages);
       if (updates.length > 0) {
-        const epicsDone = notifyEpicCompletions(plan, this.chatFilePath);
+        const epicsDone = notifyEpicCompletions(plan, this.chatFilePath, this.hiveConfig.delivery.definition_of_done);
         savePlan(this.hivePath, plan);
         this.log(`Plan updated: ${updates.map((u) => `${u.taskId}→${u.newStatus}`).join(', ')}`);
         if (epicsDone.length > 0) {
@@ -266,7 +266,7 @@ export class AgentLoop {
           planTask.updated_at = completedAt;
           planTask.completed_at = completedAt;
           planTask.resolution = taskBody;
-          const epicsDoneInline = notifyEpicCompletions(plan, this.chatFilePath);
+          const epicsDoneInline = notifyEpicCompletions(plan, this.chatFilePath, this.hiveConfig.delivery.definition_of_done);
           savePlan(this.hivePath, plan);
           if (epicsDoneInline.length > 0) {
             this.log(`Epic completions notified: ${epicsDoneInline.join(', ')}`);
