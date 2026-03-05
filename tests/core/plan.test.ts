@@ -20,6 +20,8 @@ import {
   computeParentStatus,
   sortByPriority,
   dispatchTask,
+  resetTaskForRetry,
+  DEFAULT_MAX_RETRIES,
 } from '../../src/core/plan.js';
 import type { Plan, PlanTask } from '../../src/types/plan.js';
 import type { ChatMessage } from '../../src/types/config.js';
@@ -657,6 +659,82 @@ describe('plan', () => {
       expect(messages).toHaveLength(2);
       expect(messages[0].body).toContain('[BE-01]');
       expect(messages[1].body).toContain('[FE-01]');
+    });
+  });
+
+  // ── resetTaskForRetry ──────────────────────────────────────────────
+
+  describe('resetTaskForRetry', () => {
+    it('should reset task to open and increment retry_count when below max_retries', () => {
+      const task = makeTask({ id: 'BE-01', status: 'dispatched', retry_count: 0, max_retries: 3 });
+      const result = resetTaskForRetry(task, 'spawn failed');
+      expect(result).toBe('retry');
+      expect(task.status).toBe('open');
+      expect(task.retry_count).toBe(1);
+    });
+
+    it('should mark task failed when retry_count has reached max_retries', () => {
+      const task = makeTask({ id: 'BE-01', status: 'dispatched', retry_count: 3, max_retries: 3 });
+      const result = resetTaskForRetry(task);
+      expect(result).toBe('failed');
+      expect(task.status).toBe('failed');
+    });
+
+    it('should still increment retry_count when marking failed', () => {
+      const task = makeTask({ id: 'BE-01', status: 'dispatched', retry_count: 3, max_retries: 3 });
+      resetTaskForRetry(task);
+      expect(task.retry_count).toBe(4);
+    });
+
+    it('should use DEFAULT_MAX_RETRIES when max_retries is not set on the task', () => {
+      const task = makeTask({ id: 'BE-01', status: 'dispatched' });
+
+      // Call DEFAULT_MAX_RETRIES times — all should succeed
+      for (let i = 0; i < DEFAULT_MAX_RETRIES; i++) {
+        const result = resetTaskForRetry(task);
+        expect(result).toBe('retry');
+        expect(task.status).toBe('open');
+      }
+
+      // One more should exhaust retries
+      const result = resetTaskForRetry(task);
+      expect(result).toBe('failed');
+      expect(task.status).toBe('failed');
+    });
+
+    it('should set last_error when error message is provided', () => {
+      const task = makeTask({ id: 'BE-01', status: 'dispatched' });
+      resetTaskForRetry(task, 'spawn failed: ENOENT');
+      expect(task.last_error).toBe('spawn failed: ENOENT');
+    });
+
+    it('should update last_error on subsequent retries', () => {
+      const task = makeTask({ id: 'BE-01', status: 'dispatched', max_retries: 5 });
+      resetTaskForRetry(task, 'first error');
+      expect(task.last_error).toBe('first error');
+      resetTaskForRetry(task, 'second error');
+      expect(task.last_error).toBe('second error');
+    });
+
+    it('should update updated_at timestamp on retry', () => {
+      const oldTime = '2026-01-01T00:00:00Z';
+      const task = makeTask({ id: 'BE-01', status: 'dispatched', updated_at: oldTime });
+      resetTaskForRetry(task);
+      expect(task.updated_at).not.toBe(oldTime);
+    });
+
+    it('should update updated_at timestamp even when marking failed', () => {
+      const oldTime = '2026-01-01T00:00:00Z';
+      const task = makeTask({ id: 'BE-01', status: 'dispatched', retry_count: 3, max_retries: 3, updated_at: oldTime });
+      resetTaskForRetry(task);
+      expect(task.updated_at).not.toBe(oldTime);
+    });
+
+    it('should allow retry with max_retries: 0 — immediately fail on first attempt', () => {
+      const task = makeTask({ id: 'BE-01', status: 'dispatched', retry_count: 0, max_retries: 0 });
+      const result = resetTaskForRetry(task);
+      expect(result).toBe('failed');
+      expect(task.status).toBe('failed');
     });
   });
 });

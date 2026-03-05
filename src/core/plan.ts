@@ -506,3 +506,44 @@ export function dispatchTask(
 }
 
 export { PRIORITY_ORDER };
+
+// ── Retry policy ─────────────────────────────────────────────────────
+
+/**
+ * Default number of retry attempts allowed for transient task failures.
+ * A task must fail this many times before it is permanently marked 'failed'.
+ */
+export const DEFAULT_MAX_RETRIES = 3;
+
+/**
+ * Attempt to reset a failed/dispatched plan task for retry after a transient error.
+ *
+ * Increments `task.retry_count` then:
+ * - Returns `'retry'`  and resets `task.status` to `'open'`  when retries remain.
+ * - Returns `'failed'` and sets   `task.status` to `'failed'` when retries are exhausted.
+ *
+ * The caller is responsible for saving the plan after calling this function.
+ */
+export function resetTaskForRetry(
+  task: PlanTask,
+  error?: string,
+): 'retry' | 'failed' {
+  const maxRetries = task.max_retries ?? DEFAULT_MAX_RETRIES;
+  const currentRetries = task.retry_count ?? 0;
+  const now = new Date().toISOString();
+
+  task.retry_count = currentRetries + 1;
+  task.updated_at = now;
+
+  if (error !== undefined) {
+    task.last_error = error;
+  }
+
+  if (currentRetries < maxRetries) {
+    task.status = 'open';
+    return 'retry';
+  }
+
+  task.status = 'failed';
+  return 'failed';
+}

@@ -68,6 +68,22 @@ export interface PlanTask {
 
   /** Actual cost recorded after completion. */
   actual_cost?: number;
+
+  /**
+   * Number of times this task has been retried after a transient failure.
+   * Incremented by resetTaskForRetry() each time the task is reset for retry.
+   */
+  retry_count?: number;
+
+  /**
+   * Maximum number of retry attempts allowed for transient failures.
+   * Defaults to DEFAULT_MAX_RETRIES (3) when not set.
+   * Set to 0 to disable retries (task fails permanently on first failure).
+   */
+  max_retries?: number;
+
+  /** Last error message recorded when a transient failure occurred. */
+  last_error?: string;
 }
 
 export interface Plan {

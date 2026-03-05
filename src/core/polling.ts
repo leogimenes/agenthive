@@ -4,7 +4,7 @@ import { acquireLock, releaseLock, getCheckpoint, setCheckpoint, updateHeartbeat
 import { checkDailyBudget, recordSpending, logTaskCost } from './budget.js';
 import { findRequests, appendMessage, getChatLineCount, resolveChatPath, readMessagesSince } from './chat.js';
 import { syncWorktree, rebaseAndPush } from './worktree.js';
-import { loadPlan, savePlan, reconcilePlanWithChat, computeReadyTasks, promoteReadyTasks } from './plan.js';
+import { loadPlan, savePlan, reconcilePlanWithChat, computeReadyTasks, promoteReadyTasks, resetTaskForRetry, DEFAULT_MAX_RETRIES } from './plan.js';
 import { notify } from './notify.js';
 import type { ResolvedAgentConfig, HiveConfig } from '../types/config.js';
 
@@ -166,9 +166,9 @@ export class AgentLoop {
       const task = requests[requests.length - 1];
       this.log(`Found task: ${truncate(task.body, 120)}`);
 
-      const success = await this.runTask(task.body);
+      const result = await this.runTask(task.body);
 
-      if (success) {
+      if (result.success) {
         this.consecutiveFails = 0;
         recordSpending(this.hivePath, this.agent.name, this.agent.budget);
         logTaskCost(this.hivePath, this.agent.name, task.body, this.agent.budget, true);
@@ -239,8 +239,8 @@ export class AgentLoop {
         const taskBody = `[${planTask.id}] ${planTask.title}${desc}`;
         this.log(`Plan task: ${truncate(taskBody, 120)}`);
 
-        const success = await this.runTask(taskBody);
-        if (success) {
+        const planResult = await this.runTask(taskBody);
+        if (planResult.success) {
           this.consecutiveFails = 0;
           recordSpending(this.hivePath, this.agent.name, this.agent.budget);
           logTaskCost(this.hivePath, this.agent.name, taskBody, this.agent.budget, true);
@@ -266,6 +266,30 @@ export class AgentLoop {
           this.consecutiveFails++;
           recordSpending(this.hivePath, this.agent.name, this.agent.budget);
           logTaskCost(this.hivePath, this.agent.name, taskBody, this.agent.budget, false);
+
+          // BUG 9 fix: Retry policy for transient failures.
+          // Instead of leaving the task stuck in 'dispatched' forever, reset it
+          // for retry (up to max_retries). Only mark permanently failed after all
+          // retries are exhausted.
+          const outcome = resetTaskForRetry(planTask, planResult.error);
+          if (outcome === 'failed') {
+            const maxRetries = planTask.max_retries ?? DEFAULT_MAX_RETRIES;
+            this.log(
+              `Plan task ${planTask.id} exhausted all ${maxRetries} retries. Marking permanently failed.`,
+            );
+            appendMessage(
+              this.chatFilePath,
+              this.agent.chatRole,
+              'BLOCKER',
+              `[${planTask.id}] Task failed permanently after ${planTask.retry_count} attempt(s). Manual intervention required.`,
+            );
+          } else {
+            const maxRetries = planTask.max_retries ?? DEFAULT_MAX_RETRIES;
+            this.log(
+              `Plan task ${planTask.id} failed transiently (attempt ${planTask.retry_count}/${maxRetries}). Will retry.`,
+            );
+          }
+          savePlan(this.hivePath, plan);
           await sleep(this.agent.poll * 1000);
         }
         return;
@@ -287,7 +311,14 @@ export class AgentLoop {
 
   // ── Task execution ──────────────────────────────────────────────
 
-  private async runTask(taskDescription: string): Promise<boolean> {
+  /**
+   * Run the claude agent for the given task description.
+   * Returns { success: true } on exit code 0,
+   * or { success: false, error: string } on spawn failure or non-zero exit.
+   */
+  private async runTask(
+    taskDescription: string,
+  ): Promise<{ success: true } | { success: false; error: string }> {
     const prompt = this.buildPrompt(taskDescription);
 
     this.log(`Executing: ${truncate(taskDescription, 100)}`);
@@ -309,7 +340,7 @@ export class AgentLoop {
 
     args.push(prompt);
 
-    return new Promise<boolean>((resolve) => {
+    return new Promise((resolve) => {
       const child = spawn('claude', args, {
         cwd: this.agent.worktreePath,
         stdio: 'inherit',
@@ -322,17 +353,17 @@ export class AgentLoop {
       });
 
       child.on('error', (err) => {
-        this.log(`ERROR: Failed to spawn claude: ${err.message}`);
-        resolve(false);
+        this.log(`ERROR: Failed to spawn claude: ${(err as Error).message}`);
+        resolve({ success: false, error: `spawn failed: ${(err as Error).message}` });
       });
 
       child.on('close', (code) => {
         if (code === 0) {
           this.log('Task completed successfully.');
-          resolve(true);
+          resolve({ success: true });
         } else {
           this.log(`Task exited with code ${code}.`);
-          resolve(false);
+          resolve({ success: false, error: `claude exited with code ${code}` });
         }
       });
     });

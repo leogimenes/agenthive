@@ -159,6 +159,29 @@ async function runLoopUntilTaskDone(
   releaseLock(hivePath, 'backend');
 }
 
+// ── Retry helper ─────────────────────────────────────────────────────
+
+/**
+ * Runs the AgentLoop for a fixed number of cycles (by time) then stops.
+ * Returns the final plan from disk.
+ */
+async function runLoopForMs(
+  hivePath: string,
+  durationMs: number,
+): Promise<Plan | null> {
+  const hiveConfig = makeHiveConfig(hivePath);
+  const agent = makeAgent(hivePath);
+  const loop = new AgentLoop(agent, hiveConfig, hivePath);
+
+  const startPromise = loop.start().catch(() => {});
+  await new Promise<void>((r) => setTimeout(r, durationMs));
+  loop.stop();
+  await startPromise;
+  releaseLock(hivePath, 'backend');
+
+  return loadPlan(hivePath);
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────
 
 describe('AgentLoop — plan task inline status update (BUG 10 / BUG 8)', () => {
@@ -304,5 +327,140 @@ describe('AgentLoop — plan task inline status update (BUG 10 / BUG 8)', () => 
     expect(task?.resolution).toBeDefined();
     expect(typeof task!.resolution).toBe('string');
     expect(task!.resolution!.length).toBeGreaterThan(0);
+  });
+});
+
+// ── BUG 9: retry policy for transient plan task failures ─────────────
+
+describe('AgentLoop — retry policy for transient plan task failures (BUG 9)', () => {
+  let hivePath: string;
+
+  beforeEach(() => {
+    hivePath = mkdtempSync(join(tmpdir(), 'hive-polling-retry-test-'));
+    mkdirSync(join(hivePath, 'state'), { recursive: true });
+    writeFileSync(join(hivePath, 'chat.md'), '', 'utf-8');
+
+    vi.mocked(checkDailyBudget).mockReturnValue({ allowed: true, spent: 0 });
+    vi.mocked(syncWorktree).mockResolvedValue({ success: true });
+    vi.mocked(rebaseAndPush).mockResolvedValue({ success: true });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    releaseLock(hivePath, 'backend');
+    rmSync(hivePath, { recursive: true, force: true });
+  });
+
+  it('should reset plan task to open for retry when runTask fails (below max_retries)', async () => {
+    // Arrange: max_retries: 2 so first failure resets to open
+    const plan = makePlan([{
+      id: 'BE-R1',
+      title: 'Retry task',
+      target: 'backend',
+      status: 'ready',
+      max_retries: 2,
+    }]);
+    savePlan(hivePath, plan);
+
+    // First spawn call fails, second succeeds — so we can observe retry state
+    vi.mocked(spawn)
+      .mockReturnValueOnce(fakeChild(1))  // first attempt fails
+      .mockReturnValue(fakeChild(0));     // subsequent succeed
+
+    // Run until task reaches 'done' (after retry)
+    await runLoopUntilTaskDone(hivePath, 'BE-R1', 8000);
+
+    const finalPlan = loadPlan(hivePath);
+    const task = finalPlan!.tasks.find((t) => t.id === 'BE-R1');
+    expect(task).toBeDefined();
+    // Task should eventually succeed via retry
+    expect(task!.status).toBe('done');
+    // retry_count must be at least 1 (recorded the failed attempt)
+    expect(task!.retry_count).toBeGreaterThanOrEqual(1);
+  });
+
+  it('should mark plan task as failed after exhausting max_retries', async () => {
+    // Arrange: max_retries: 0 → immediate permanent failure on first attempt
+    const plan = makePlan([{
+      id: 'BE-R2',
+      title: 'Always failing task',
+      target: 'backend',
+      status: 'ready',
+      max_retries: 0,
+    }]);
+    savePlan(hivePath, plan);
+
+    // Always fail
+    vi.mocked(spawn).mockReturnValue(fakeChild(1));
+
+    // Run until task reaches terminal state
+    await runLoopUntilTaskDone(hivePath, 'BE-R2', 6000);
+
+    const finalPlan = loadPlan(hivePath);
+    const task = finalPlan!.tasks.find((t) => t.id === 'BE-R2');
+    expect(task).toBeDefined();
+    expect(task!.status).toBe('failed');
+  });
+
+  it('should record last_error when a plan task fails transiently', async () => {
+    // Arrange: spawn error (infrastructure failure) with max_retries: 0 to ensure fast terminal state
+    const plan = makePlan([{
+      id: 'BE-R3',
+      title: 'Spawn error task',
+      target: 'backend',
+      status: 'ready',
+      max_retries: 0,
+    }]);
+    savePlan(hivePath, plan);
+
+    // Simulate spawn failure (infrastructure error — not a claude exit code)
+    const errChild = (() => {
+      const handlers: Record<string, (arg?: unknown) => void> = {};
+      const emitter = {
+        on: vi.fn().mockImplementation((event: string, handler: (arg?: unknown) => void) => {
+          handlers[event] = handler;
+          if (event === 'error') {
+            setTimeout(() => handler(new Error('spawn ENOENT')), 10);
+          }
+          return emitter;
+        }),
+      };
+      return emitter as unknown as ReturnType<typeof spawn>;
+    })();
+
+    vi.mocked(spawn).mockReturnValue(errChild);
+
+    await runLoopUntilTaskDone(hivePath, 'BE-R3', 6000);
+
+    const finalPlan = loadPlan(hivePath);
+    const task = finalPlan!.tasks.find((t) => t.id === 'BE-R3');
+    expect(task).toBeDefined();
+    expect(task!.status).toBe('failed');
+    expect(task!.last_error).toBeDefined();
+    expect(task!.last_error).toContain('spawn');
+  });
+
+  it('should increment retry_count on each failed attempt', async () => {
+    // Arrange: max_retries: 2 — allows 2 retries before failing permanently
+    const plan = makePlan([{
+      id: 'BE-R4',
+      title: 'Counted retries task',
+      target: 'backend',
+      status: 'ready',
+      max_retries: 2,
+    }]);
+    savePlan(hivePath, plan);
+
+    // Always fail so we exhaust retries
+    vi.mocked(spawn).mockReturnValue(fakeChild(1));
+
+    await runLoopUntilTaskDone(hivePath, 'BE-R4', 8000);
+
+    const finalPlan = loadPlan(hivePath);
+    const task = finalPlan!.tasks.find((t) => t.id === 'BE-R4');
+    expect(task).toBeDefined();
+    expect(task!.status).toBe('failed');
+    // retry_count should be max_retries + 1 (one final failing attempt)
+    expect(task!.retry_count).toBe(3);
   });
 });
