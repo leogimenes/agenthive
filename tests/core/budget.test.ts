@@ -251,4 +251,86 @@ describe('budget', () => {
       expect(entries).toHaveLength(0);
     });
   });
+
+  // ── QA-17: Real cost accumulation ─────────────────────────────────
+
+  describe('real cost accumulation (QA-17)', () => {
+    it('should accumulate real fractional costs ($0.04 + $1.23 = $1.27)', () => {
+      recordSpending(hivePath, 'qa', 0.04252125);
+      const total = recordSpending(hivePath, 'qa', 1.23);
+      // recordSpending rounds to cents: 0.04 + 1.23 = 1.27 (not $2 + $2 = $4)
+      expect(total).toBe(1.27);
+    });
+
+    it('should accumulate multiple small real costs precisely', () => {
+      // Simulate 5 tasks each costing ~$0.04
+      recordSpending(hivePath, 'qa', 0.04252125);
+      recordSpending(hivePath, 'qa', 0.03876500);
+      recordSpending(hivePath, 'qa', 0.05100000);
+      recordSpending(hivePath, 'qa', 0.04111111);
+      const total = recordSpending(hivePath, 'qa', 0.02660264);
+      expect(total).toBeCloseTo(0.2, 1); // ~$0.20 total, not $2 × 5 = $10
+      expect(total).toBeLessThan(0.25); // definitely not a flat $2/task
+    });
+
+    it('should not round real costs to whole dollars', () => {
+      const total = recordSpending(hivePath, 'qa', 0.04252125);
+      expect(total).not.toBe(2); // must not be flat $2 fallback
+      expect(total).not.toBe(Math.round(total)); // must retain fractional precision
+    });
+
+    it('should log real cost amounts in cost log (not flat config budget)', () => {
+      logTaskCost(hivePath, 'qa', 'implement auth', 0.04252125, true);
+      const entries = readCostLog(hivePath, 'qa');
+      expect(entries).toHaveLength(1);
+      expect(entries[0].amount).toBe(0.04252125);
+      expect(entries[0].amount).not.toBe(2); // not the flat $2 budget
+    });
+
+    it('should preserve full precision of real cost in log entries', () => {
+      logTaskCost(hivePath, 'qa', 'task', 0.87654321, false);
+      const entries = readCostLog(hivePath, 'qa');
+      expect(entries[0].amount).toBe(0.87654321);
+    });
+
+    it('should allow budget check to use real accumulated spend', () => {
+      // Accumulate several real costs well below the $20 daily max
+      recordSpending(hivePath, 'qa', 0.04252125);
+      recordSpending(hivePath, 'qa', 1.23);
+      const result = checkDailyBudget(hivePath, 'qa', 20);
+      expect(result.allowed).toBe(true);
+      // recordSpending rounds to cents: 0.04 + 1.23 = 1.27
+      expect(result.spent).toBe(1.27);
+      // Should NOT be $4 (two flat $2 charges)
+      expect(result.spent).toBeLessThan(2);
+    });
+
+    it('should deny budget only when real accumulated spend exceeds daily max', () => {
+      // Accumulate real costs up to the daily max
+      recordSpending(hivePath, 'qa', 15.5);
+      recordSpending(hivePath, 'qa', 4.6); // total 20.1 > 20
+      const result = checkDailyBudget(hivePath, 'qa', 20);
+      expect(result.allowed).toBe(false);
+      expect(result.spent).toBeCloseTo(20.1, 1);
+    });
+
+    it('should log multiple real costs as separate entries with correct amounts', () => {
+      logTaskCost(hivePath, 'qa', 'task-1', 0.04252125, true);
+      logTaskCost(hivePath, 'qa', 'task-2', 1.23, true);
+      const entries = readCostLog(hivePath, 'qa');
+      expect(entries).toHaveLength(2);
+      expect(entries[0].amount).toBe(0.04252125);
+      expect(entries[1].amount).toBe(1.23);
+      // No entry should have the flat $2 budget amount
+      expect(entries.every((e) => e.amount !== 2)).toBe(true);
+    });
+
+    it('should track real costs per agent independently', () => {
+      recordSpending(hivePath, 'qa', 0.04252125);
+      recordSpending(hivePath, 'backend', 1.23);
+      // recordSpending rounds to cents: 0.04252125 → 0.04, 1.23 → 1.23
+      expect(getDailySpend(hivePath, 'qa').spent).toBe(0.04);
+      expect(getDailySpend(hivePath, 'backend').spent).toBe(1.23);
+    });
+  });
 });

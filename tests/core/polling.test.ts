@@ -1422,5 +1422,301 @@ describe('AgentLoop', () => {
 
       expect(vi.mocked(recordSpending)).toHaveBeenCalledWith(hivePath, 'qa', 0.01);
     });
+
+    it('should use real cost in logTaskCost on successful task (chat request path)', async () => {
+      vi.mocked(findRequests).mockReturnValue([
+        { role: 'PM', type: 'REQUEST', body: 'implement auth', lineNumber: 5 },
+      ]);
+      const realCostJson = JSON.stringify({ type: 'result', total_cost_usd: 0.87654321 });
+      mockSpawnExit(0, realCostJson);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(vi.mocked(logTaskCost)).toHaveBeenCalledWith(
+        hivePath,
+        'qa',
+        'implement auth',
+        0.87654321,
+        true,
+      );
+    });
+
+    it('should use real cost in logTaskCost on failed task (chat request path)', async () => {
+      vi.mocked(findRequests).mockReturnValue([
+        { role: 'PM', type: 'REQUEST', body: 'implement auth', lineNumber: 5 },
+      ]);
+      const failCostJson = JSON.stringify({ type: 'result', is_error: true, total_cost_usd: 0.05 });
+      mockSpawnExit(1, failCostJson);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(vi.mocked(logTaskCost)).toHaveBeenCalledWith(
+        hivePath,
+        'qa',
+        'implement auth',
+        0.05,
+        false,
+      );
+    });
+
+    it('should use real cost for plan task success path', async () => {
+      const task = {
+        id: 'task-cost',
+        title: 'Cost tracking task',
+        description: 'Verify cost',
+        target: 'qa',
+        priority: 'p1' as const,
+        status: 'ready' as const,
+        depends_on: [] as string[],
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      };
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      const realCostJson = JSON.stringify({ type: 'result', total_cost_usd: 0.04252125 });
+      mockSpawnExit(0, realCostJson);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(vi.mocked(recordSpending)).toHaveBeenCalledWith(hivePath, 'qa', 0.04252125);
+    });
+
+    it('should use real cost for plan task failure path', async () => {
+      const task = {
+        id: 'task-cost-fail',
+        title: 'Failing cost task',
+        description: 'Will fail',
+        target: 'qa',
+        priority: 'p1' as const,
+        status: 'ready' as const,
+        depends_on: [] as string[],
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      };
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      const failCostJson = JSON.stringify({ type: 'result', is_error: true, total_cost_usd: 0.0215 });
+      mockSpawnExit(1, failCostJson);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(vi.mocked(recordSpending)).toHaveBeenCalledWith(hivePath, 'qa', 0.0215);
+    });
+
+    it('should use real cost in logTaskCost for plan task success', async () => {
+      const task = {
+        id: 'task-log-cost',
+        title: 'Log cost task',
+        description: 'Verify log',
+        target: 'qa',
+        priority: 'p1' as const,
+        status: 'ready' as const,
+        depends_on: [] as string[],
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      };
+      const fakePlan = { tasks: [task], version: 1 };
+      vi.mocked(loadPlan).mockReturnValue(fakePlan as ReturnType<typeof loadPlan>);
+      vi.mocked(computeReadyTasks).mockReturnValue([task]);
+      const realCostJson = JSON.stringify({ type: 'result', total_cost_usd: 1.23 });
+      mockSpawnExit(0, realCostJson);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(vi.mocked(logTaskCost)).toHaveBeenCalledWith(
+        hivePath,
+        'qa',
+        expect.stringContaining('Log cost task'),
+        1.23,
+        true,
+      );
+    });
+
+    it('should handle warning text before JSON (backwards scan finds last JSON line)', async () => {
+      vi.mocked(findRequests).mockReturnValue([
+        { role: 'PM', type: 'REQUEST', body: 'task', lineNumber: 5 },
+      ]);
+      // Claude CLI may emit warning lines before the JSON output
+      const stdoutWithWarning = [
+        'Warning: experimental feature enabled',
+        'Retrying with backoff...',
+        JSON.stringify({ type: 'result', total_cost_usd: 0.333 }),
+      ].join('\n');
+      mockSpawnExit(0, stdoutWithWarning);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(vi.mocked(recordSpending)).toHaveBeenCalledWith(hivePath, 'qa', 0.333);
+    });
+
+    it('should fall back to config budget when stdout has no JSON lines', async () => {
+      vi.mocked(findRequests).mockReturnValue([
+        { role: 'PM', type: 'REQUEST', body: 'task', lineNumber: 5 },
+      ]);
+      // Lines that don't start with '{' — no parseable JSON
+      const noJsonStdout = 'some plain text output\nanother line\nnot json at all';
+      mockSpawnExit(0, noJsonStdout);
+
+      const promise = callCycle(loop);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      // Falls back to agent.budget = 2
+      expect(vi.mocked(recordSpending)).toHaveBeenCalledWith(hivePath, 'qa', 2);
+    });
+  });
+});
+
+// ── parseClaudeCost (unit tests for exported helper) ───────────────────────
+
+import { parseClaudeCost, parseClaudeSessionId } from '../../src/core/polling.js';
+
+describe('parseClaudeCost', () => {
+  it('should return total_cost_usd from valid JSON', () => {
+    const stdout = JSON.stringify({ type: 'result', total_cost_usd: 0.04252125 });
+    expect(parseClaudeCost(stdout, 2)).toBe(0.04252125);
+  });
+
+  it('should return fallback when stdout is empty', () => {
+    expect(parseClaudeCost('', 2)).toBe(2);
+  });
+
+  it('should return fallback when stdout has no JSON', () => {
+    expect(parseClaudeCost('Warning: something\nPlain text output', 1.5)).toBe(1.5);
+  });
+
+  it('should return fallback when JSON lacks total_cost_usd field', () => {
+    const stdout = JSON.stringify({ type: 'result', subtype: 'success' });
+    expect(parseClaudeCost(stdout, 2)).toBe(2);
+  });
+
+  it('should return fallback when JSON total_cost_usd is not a number', () => {
+    const stdout = JSON.stringify({ type: 'result', total_cost_usd: 'free' });
+    expect(parseClaudeCost(stdout, 2)).toBe(2);
+  });
+
+  it('should return fallback on malformed JSON', () => {
+    expect(parseClaudeCost('{invalid json here', 2)).toBe(2);
+  });
+
+  it('should scan backwards and use last JSON line', () => {
+    // Earlier lines are text; only the last line starting with { is the JSON
+    const stdout = [
+      'Warning: using deprecated flag',
+      'Some diagnostic output',
+      JSON.stringify({ type: 'result', total_cost_usd: 0.789 }),
+    ].join('\n');
+    expect(parseClaudeCost(stdout, 2)).toBe(0.789);
+  });
+
+  it('should handle total_cost_usd of exactly 0', () => {
+    const stdout = JSON.stringify({ type: 'result', total_cost_usd: 0 });
+    expect(parseClaudeCost(stdout, 2)).toBe(0);
+  });
+
+  it('should handle large cost values', () => {
+    const stdout = JSON.stringify({ type: 'result', total_cost_usd: 99.9999 });
+    expect(parseClaudeCost(stdout, 2)).toBe(99.9999);
+  });
+
+  it('should handle fractional precision (real-world cost like 0.04252125)', () => {
+    const stdout = JSON.stringify({
+      type: 'result',
+      total_cost_usd: 0.04252125,
+      session_id: 'abc-123',
+    });
+    expect(parseClaudeCost(stdout, 2)).toBe(0.04252125);
+  });
+
+  it('should return fallback when JSON has { but is truncated', () => {
+    expect(parseClaudeCost('{truncated', 2)).toBe(2);
+  });
+
+  it('should use provided fallback value (not hardcoded constant)', () => {
+    expect(parseClaudeCost('', 3.14)).toBe(3.14);
+    expect(parseClaudeCost('', 0)).toBe(0);
+    expect(parseClaudeCost('', 100)).toBe(100);
+  });
+
+  it('should ignore lines that do not start with {', () => {
+    const stdout = [
+      '  { "looks_like_json_but_indented": true }',
+      'not json',
+      '{ "total_cost_usd": 0.555 }',
+    ].join('\n');
+    // Only the last line starting with { (after trim) is used
+    expect(parseClaudeCost(stdout, 2)).toBe(0.555);
+  });
+
+  it('should handle stdout with only whitespace', () => {
+    expect(parseClaudeCost('   \n  \n   ', 2)).toBe(2);
+  });
+});
+
+// ── parseClaudeSessionId (unit tests for exported helper) ─────────────────
+
+describe('parseClaudeSessionId', () => {
+  it('should return session_id from valid JSON', () => {
+    const stdout = JSON.stringify({ type: 'result', session_id: 'abc-def-123' });
+    expect(parseClaudeSessionId(stdout)).toBe('abc-def-123');
+  });
+
+  it('should return undefined when stdout is empty', () => {
+    expect(parseClaudeSessionId('')).toBeUndefined();
+  });
+
+  it('should return undefined when JSON has no session_id field', () => {
+    const stdout = JSON.stringify({ type: 'result', total_cost_usd: 0.04 });
+    expect(parseClaudeSessionId(stdout)).toBeUndefined();
+  });
+
+  it('should return undefined when JSON session_id is not a string', () => {
+    const stdout = JSON.stringify({ type: 'result', session_id: 12345 });
+    expect(parseClaudeSessionId(stdout)).toBeUndefined();
+  });
+
+  it('should return undefined on malformed JSON', () => {
+    expect(parseClaudeSessionId('{bad json')).toBeUndefined();
+  });
+
+  it('should scan backwards to find last JSON line', () => {
+    const stdout = [
+      'Warning text',
+      JSON.stringify({ type: 'result', session_id: 'uuid-xyz-789', total_cost_usd: 0.04 }),
+    ].join('\n');
+    expect(parseClaudeSessionId(stdout)).toBe('uuid-xyz-789');
+  });
+
+  it('should return undefined for non-string session_id null', () => {
+    const stdout = JSON.stringify({ type: 'result', session_id: null });
+    expect(parseClaudeSessionId(stdout)).toBeUndefined();
+  });
+
+  it('should handle full claude JSON output structure', () => {
+    const fullOutput = JSON.stringify({
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      total_cost_usd: 0.04252125,
+      duration_ms: 2169,
+      num_turns: 1,
+      session_id: 'full-session-uuid',
+      usage: { input_tokens: 100, output_tokens: 50 },
+    });
+    expect(parseClaudeSessionId(fullOutput)).toBe('full-session-uuid');
   });
 });
