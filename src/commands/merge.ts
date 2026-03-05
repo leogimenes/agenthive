@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolve, join } from 'node:path';
 import { existsSync, writeFileSync, readFileSync, unlinkSync, mkdirSync } from 'node:fs';
@@ -19,6 +19,7 @@ export function registerMergeCommand(program: Command): void {
     .option('--dry-run', 'Show what would be merged without doing it')
     .option('--continue', 'Resume after a manually resolved conflict')
     .option('--epic <epicId>', 'Consolidate epic tasks into an epic/<epicId> branch via squash-merge')
+    .option('--pr', 'Create a GitHub PR via gh pr create instead of pushing directly to main')
     .action(async (agents: string[], opts) => {
       const cwd = program.opts().cwd
         ? resolve(program.opts().cwd)
@@ -101,7 +102,7 @@ function clearMergeState(hiveRoot: string): void {
 async function runMerge(
   cwd: string,
   agentFilter: string[],
-  opts: { dryRun?: boolean },
+  opts: { dryRun?: boolean; pr?: boolean },
 ): Promise<void> {
   let config;
   let hiveRoot: string;
@@ -228,6 +229,37 @@ async function runMerge(
     for (const s of skipped) {
       if (s.result.status === 'skipped') {
         console.log(`  ${chalk.gray('⊘')} ${chalk.bold(s.name)} — ${s.result.reason}`);
+      }
+    }
+    console.log('');
+    return;
+  }
+
+  // ── PR mode ──────────────────────────────────────────────────────
+
+  if (opts.pr) {
+    console.log(`Creating PRs for ${mergeable.length} agent(s) against ${chalk.cyan(mainBranch)}:\n`);
+
+    for (const { agent, commitsAhead } of mergeable) {
+      const branchName = `agent/${agent.name}`;
+      console.log(`  ${chalk.bold(agent.name)} (${commitsAhead} commit(s))...`);
+
+      const commits = await getCommitList(hiveRoot, branchName, mainBranch);
+      const prInfo: PRAgentInfo = { agentName: agent.name, branchName, commits, commitsAhead };
+      const result = await mergeAgentAsPR(hiveRoot, prInfo, mainBranch);
+
+      if (result.status === 'pr-created') {
+        console.log(`    ${chalk.green('✓')} PR created: ${chalk.cyan(result.prUrl)}`);
+      } else {
+        console.log(`    ${chalk.red('✗')} Failed: ${result.error}`);
+      }
+    }
+
+    console.log('');
+    console.log(chalk.bold('Summary:'));
+    for (const { name, result } of skipped) {
+      if (result.status === 'skipped') {
+        console.log(`  ${chalk.gray('⊘')} ${chalk.bold(name)} — skipped: ${result.reason}`);
       }
     }
     console.log('');
@@ -836,6 +868,170 @@ async function runEpicMerge(
     console.log(`    ${chalk.cyan(`git push origin ${epicBranch}`)}`);
   }
   console.log('');
+}
+
+// ── PR creation helpers ────────────────────────────────────────────
+
+/** Extract task IDs from commit subjects (e.g. BE-25, US-003, feat(BE-24): ...) */
+function extractTaskIds(subjects: string[]): string[] {
+  const seen = new Set<string>();
+  const taskPattern = /\b([A-Z]{1,10}-\d+)\b/g;
+  const scopePattern = /\(([A-Z]{1,10}-\d+)\)/g;
+  for (const s of subjects) {
+    for (const m of s.matchAll(taskPattern)) seen.add(m[1]);
+    for (const m of s.matchAll(scopePattern)) seen.add(m[1]);
+  }
+  return [...seen].sort();
+}
+
+/** Run tests and return a trimmed excerpt of the output. */
+function runTestsForPR(hiveRoot: string): { passed: boolean; output: string } {
+  try {
+    const raw = execFileSync('npm', ['test'], {
+      cwd: hiveRoot,
+      encoding: 'utf-8',
+      timeout: 120_000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const lines = raw.split('\n').slice(-40).join('\n').trim();
+    return { passed: true, output: lines };
+  } catch (err: unknown) {
+    const e = err as { stdout?: string; stderr?: string };
+    const combined = ((e.stdout ?? '') + '\n' + (e.stderr ?? '')).trim();
+    const lines = combined.split('\n').slice(-40).join('\n').trim();
+    return { passed: false, output: lines };
+  }
+}
+
+interface PRAgentInfo {
+  agentName: string;
+  branchName: string;
+  commits: Array<{ sha: string; subject: string }>;
+  commitsAhead: number;
+}
+
+/** Collect commit list for a branch relative to mainBranch. */
+async function getCommitList(
+  hiveRoot: string,
+  branchName: string,
+  mainBranch: string,
+): Promise<Array<{ sha: string; subject: string }>> {
+  try {
+    const { stdout } = await exec(
+      'git',
+      ['log', '--format=%H %s', `origin/${mainBranch}..${branchName}`],
+      { cwd: hiveRoot },
+    );
+    const lines = stdout.trim().split('\n').filter((l) => l.trim().length > 0);
+    return lines.map((line) => {
+      const idx = line.indexOf(' ');
+      return { sha: line.slice(0, idx), subject: line.slice(idx + 1) };
+    }).reverse();
+  } catch {
+    return [];
+  }
+}
+
+/** Build the PR body markdown. */
+function buildPRBody(
+  agentName: string,
+  mainBranch: string,
+  commits: Array<{ sha: string; subject: string }>,
+  testResult: { passed: boolean; output: string },
+): string {
+  const taskIds = extractTaskIds(commits.map((c) => c.subject));
+
+  const tasksSection = taskIds.length > 0
+    ? taskIds.map((id) => `- ${id}`).join('\n')
+    : '_No task IDs found in commit messages._';
+
+  const commitsSection = commits.length > 0
+    ? commits.map((c) => `- \`${c.sha.slice(0, 7)}\` ${c.subject}`).join('\n')
+    : '_No commits._';
+
+  const testStatus = testResult.passed ? 'PASSED' : 'FAILED';
+  const testBlock = testResult.output
+    ? `\`\`\`\n${testResult.output}\n\`\`\``
+    : '_No test output captured._';
+
+  return [
+    `## Tasks Completed`,
+    '',
+    tasksSection,
+    '',
+    `## Commit Summary`,
+    '',
+    `Agent \`${agentName}\` — ${commits.length} commit(s) onto \`${mainBranch}\`:`,
+    '',
+    commitsSection,
+    '',
+    `## Test Results`,
+    '',
+    `**Status:** ${testStatus}`,
+    '',
+    testBlock,
+    '',
+    '---',
+    '_Created by AgentHive `hive merge --pr`_',
+  ].join('\n');
+}
+
+/** Rebase branch onto main, push the agent branch (not to main), then create a PR. */
+async function mergeAgentAsPR(
+  hiveRoot: string,
+  info: PRAgentInfo,
+  mainBranch: string,
+): Promise<{ status: 'pr-created'; prUrl: string } | { status: 'failed'; error: string }> {
+  const worktreePath = join(hiveRoot, '.hive', 'worktrees', info.agentName);
+  const workDir = existsSync(worktreePath) ? worktreePath : null;
+
+  if (!workDir) {
+    return { status: 'failed', error: `No worktree found at ${worktreePath}` };
+  }
+
+  try {
+    // Rebase onto main
+    await exec('git', ['fetch', 'origin'], { cwd: workDir });
+    await exec('git', ['rebase', `origin/${mainBranch}`], { cwd: workDir });
+
+    // Push the rebased agent branch to origin (not to main)
+    await exec('git', ['push', '--force-with-lease', 'origin', `${info.branchName}:${info.branchName}`], { cwd: workDir });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    try {
+      await exec('git', ['rebase', '--abort'], { cwd: workDir });
+    } catch { /* not in rebase */ }
+    return { status: 'failed', error: message };
+  }
+
+  // Run tests
+  console.log(chalk.gray('    Running tests...'));
+  const testResult = runTestsForPR(hiveRoot);
+
+  // Get updated commit list (post-rebase)
+  const commits = await getCommitList(hiveRoot, info.branchName, mainBranch);
+
+  // Build PR body
+  const body = buildPRBody(info.agentName, mainBranch, commits, testResult);
+  const title = `feat(${info.agentName}): ${commits.length} task(s) merged [agent/${info.agentName}]`;
+
+  try {
+    const { stdout: prUrl } = await exec(
+      'gh',
+      [
+        'pr', 'create',
+        '--base', mainBranch,
+        '--head', info.branchName,
+        '--title', title,
+        '--body', body,
+      ],
+      { cwd: hiveRoot },
+    );
+    return { status: 'pr-created', prUrl: prUrl.trim() };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { status: 'failed', error: `gh pr create failed: ${message}` };
+  }
 }
 
 // ── Summary ────────────────────────────────────────────────────────

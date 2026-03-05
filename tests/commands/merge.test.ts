@@ -446,4 +446,37 @@ describe('hive merge (CLI integration)', () => {
       expect(stdout).toContain('3 commit');
     });
   });
+
+  // ── --pr flag ─────────────────────────────────────────────────────────
+
+  describe('--pr flag', () => {
+    beforeEach(() => {
+      setupRepos(['alpha']);
+    });
+
+    it('should show --pr option in help', () => {
+      const { stdout } = runCli('merge --help');
+      expect(stdout).toContain('--pr');
+    });
+
+    it('should skip agents with no commits in --pr mode', () => {
+      // alpha has no commits — should be skipped
+      const { stdout, code } = runCli('merge --pr', { expectError: false });
+      expect(code).toBe(0);
+      expect(stdout).toContain('no new commits');
+    });
+
+    it('should attempt PR creation when agent has commits (fails gracefully without gh)', () => {
+      const alphaWt = join(tmpDir, '.hive', 'worktrees', 'alpha');
+      writeFileSync(join(alphaWt, 'feat.ts'), 'export const x = 1;\n', 'utf-8');
+      gitSilent('add feat.ts', alphaWt);
+      gitSilent('commit -m "feat(BE-26): add pr support"', alphaWt);
+
+      // gh is not configured against our local bare repo, so it will fail gracefully
+      const result = runCli('merge --pr', { expectError: false });
+      const combined = result.stdout + result.stderr;
+      // Should mention the agent and attempt PR creation
+      expect(combined).toContain('alpha');
+    });
+  });
 });
