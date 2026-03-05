@@ -13,12 +13,13 @@ import { PlanTaskDetail } from './components/PlanTaskDetail.js';
 import { InputBar } from './components/InputBar.js';
 import { AgentDetail } from './components/AgentDetail.js';
 import { HelpOverlay } from './components/HelpOverlay.js';
+import { TranscriptPanel } from './components/TranscriptPanel.js';
 import { appendMessage, resolveChatPath } from '../core/chat.js';
 import { resolveHivePath, resolveAllAgents, loadConfig, resolveHiveRoot } from '../core/config.js';
 import { dispatchTask, loadPlan, savePlan } from '../core/plan.js';
 import type { MessageType } from '../types/config.js';
 
-const PANELS: Panel[] = ['status', 'chat', 'plan', 'input'];
+const PANELS: Panel[] = ['status', 'chat', 'plan', 'input', 'transcript'];
 const VALID_TYPES = new Set(['REQUEST', 'STATUS', 'DONE', 'QUESTION', 'BLOCKER', 'ACK', 'WARN']);
 
 interface AppProps {
@@ -48,6 +49,10 @@ export function App({ cwd }: AppProps): React.ReactElement {
   const [inputError, setInputError] = useState<string | undefined>();
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+
+  // Transcript panel state
+  const [transcriptScroll, setTranscriptScroll] = useState(0);
+  const [transcriptAgent, setTranscriptAgent] = useState(0);
 
   // Plan panel state
   const planData = usePlanData(cwd);
@@ -246,6 +251,11 @@ export function App({ cwd }: AppProps): React.ReactElement {
     if (input === '4') { setActivePanel('input'); return; }
     if (input === 'c') { setActivePanel('chat'); return; }
     if (input === 'p') { setActivePanel('plan'); return; }
+    if (input === 't' && activePanel !== 'chat') {
+      setActivePanel((prev) => prev === 'transcript' ? 'status' : 'transcript');
+      setTranscriptScroll(0);
+      return;
+    }
     if (input === 'd' && activePanel !== 'plan') {
       setActivePanel('input');
       return;
@@ -383,6 +393,37 @@ export function App({ cwd }: AppProps): React.ReactElement {
       }
       return;
     }
+
+    // Transcript panel keys
+    if (activePanel === 'transcript') {
+      if (key.escape) {
+        setActivePanel('status');
+        return;
+      }
+      if (input === 'j' || key.downArrow) {
+        setTranscriptScroll((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (input === 'k' || key.upArrow) {
+        setTranscriptScroll((prev) => prev + 1);
+        return;
+      }
+      if (input === 'G') {
+        setTranscriptScroll(0);
+        return;
+      }
+      if (input === 'h') {
+        setTranscriptAgent((prev) => Math.max(0, prev - 1));
+        setTranscriptScroll(0);
+        return;
+      }
+      if (input === 'l') {
+        setTranscriptAgent((prev) => Math.min(prev + 1, status.agents.length - 1));
+        setTranscriptScroll(0);
+        return;
+      }
+      return;
+    }
   });
 
   if (showHelp) {
@@ -408,7 +449,16 @@ export function App({ cwd }: AppProps): React.ReactElement {
           focused={activePanel === 'status'}
         />
 
-        {activePanel === 'plan' ? (
+        {activePanel === 'transcript' ? (
+          <TranscriptPanel
+            agent={status.agents[transcriptAgent]}
+            agents={status.agents}
+            selectedAgentIndex={transcriptAgent}
+            focused={true}
+            scrollOffset={transcriptScroll}
+            maxVisible={Math.max(5, termHeight - 14)}
+          />
+        ) : activePanel === 'plan' ? (
           showTaskDetail && getFilteredPlanTasks()[selectedTask] ? (
             <PlanTaskDetail
               task={getFilteredPlanTasks()[selectedTask]}

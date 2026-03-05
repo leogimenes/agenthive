@@ -1,4 +1,4 @@
-export type Panel = 'status' | 'chat' | 'plan' | 'input';
+export type Panel = 'status' | 'chat' | 'plan' | 'input' | 'transcript';
 
 export type Action =
   | { type: 'quit' }
@@ -47,6 +47,11 @@ export const HELP_ENTRIES = [
   { key: 'f', desc: 'Cycle status filter' },
   { key: 'a', desc: 'Cycle agent filter' },
   { key: 'Esc', desc: 'Close detail view' },
+  { key: '', desc: '' },
+  { key: '── Transcript ──', desc: '' },
+  { key: 't', desc: 'Toggle transcript panel' },
+  { key: 'h / l', desc: 'Previous / next agent' },
+  { key: 'j / k / ↑ / ↓', desc: 'Scroll events' },
   { key: '', desc: '' },
   { key: '── Input ──', desc: '' },
   { key: 'Enter', desc: 'Send message' },
