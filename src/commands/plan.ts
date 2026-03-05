@@ -1001,6 +1001,7 @@ async function runImport(cwd: string, file: string): Promise<void> {
       depends_on: imported.depends_on ?? [],
       created_at: now,
       updated_at: now,
+      ...(imported.type ? { type: imported.type } : {}),
       ...(imported.description ? { description: imported.description } : {}),
       ...(imported.parent ? { parent: imported.parent } : {}),
       ...(imported.labels ? { labels: imported.labels } : {}),
@@ -1049,21 +1050,90 @@ async function runImport(cwd: string, file: string): Promise<void> {
 }
 
 function parseYamlImport(content: string): Partial<PlanTask>[] {
-  const parsed = parseYaml(content) as { tasks?: Record<string, unknown>[] };
-  if (!parsed?.tasks || !Array.isArray(parsed.tasks)) {
-    throw new Error('YAML must contain a "tasks" array.');
+  type RawTask = Record<string, unknown>;
+  const parsed = parseYaml(content) as {
+    tasks?: RawTask[];
+    epics?: RawTask[];
+  };
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('YAML must contain a "tasks" array or an "epics" hierarchy.');
   }
 
-  return parsed.tasks.map((t: Record<string, unknown>) => ({
-    id: t.id as string | undefined,
-    title: t.title as string,
-    target: t.target as string,
-    priority: t.priority as Priority | undefined,
-    depends_on: Array.isArray(t.depends_on) ? (t.depends_on as string[]) : undefined,
-    description: t.description as string | undefined,
-    parent: t.parent as string | undefined,
-    labels: Array.isArray(t.labels) ? (t.labels as string[]) : undefined,
-  }));
+  // Flat format: { tasks: [...] }
+  if (parsed.tasks && Array.isArray(parsed.tasks)) {
+    return parsed.tasks.map((t: RawTask) => ({
+      id: t.id as string | undefined,
+      type: t.type as TaskType | undefined,
+      title: t.title as string,
+      target: t.target as string,
+      priority: t.priority as Priority | undefined,
+      depends_on: Array.isArray(t.depends_on) ? (t.depends_on as string[]) : undefined,
+      description: t.description as string | undefined,
+      parent: t.parent as string | undefined,
+      labels: Array.isArray(t.labels) ? (t.labels as string[]) : undefined,
+    }));
+  }
+
+  // Nested format: { epics: [{ stories: [{ tasks: [...] }] }] }
+  if (parsed.epics && Array.isArray(parsed.epics)) {
+    const result: Partial<PlanTask>[] = [];
+
+    for (const epic of parsed.epics) {
+      const epicId = epic.id as string | undefined;
+      const epicTarget = epic.target as string;
+      result.push({
+        id: epicId,
+        type: 'epic',
+        title: epic.title as string,
+        target: epicTarget,
+        priority: epic.priority as Priority | undefined,
+        depends_on: Array.isArray(epic.depends_on) ? (epic.depends_on as string[]) : undefined,
+        description: epic.description as string | undefined,
+        labels: Array.isArray(epic.labels) ? (epic.labels as string[]) : undefined,
+      });
+
+      const stories = epic.stories as RawTask[] | undefined;
+      if (!stories || !Array.isArray(stories)) continue;
+
+      for (const story of stories) {
+        const storyId = story.id as string | undefined;
+        const storyTarget = (story.target as string | undefined) ?? epicTarget;
+        result.push({
+          id: storyId,
+          type: 'story',
+          title: story.title as string,
+          target: storyTarget,
+          priority: story.priority as Priority | undefined,
+          depends_on: Array.isArray(story.depends_on) ? (story.depends_on as string[]) : undefined,
+          description: story.description as string | undefined,
+          parent: epicId,
+          labels: Array.isArray(story.labels) ? (story.labels as string[]) : undefined,
+        });
+
+        const tasks = story.tasks as RawTask[] | undefined;
+        if (!tasks || !Array.isArray(tasks)) continue;
+
+        for (const task of tasks) {
+          result.push({
+            id: task.id as string | undefined,
+            type: 'task',
+            title: task.title as string,
+            target: (task.target as string | undefined) ?? storyTarget,
+            priority: task.priority as Priority | undefined,
+            depends_on: Array.isArray(task.depends_on) ? (task.depends_on as string[]) : undefined,
+            description: task.description as string | undefined,
+            parent: storyId,
+            labels: Array.isArray(task.labels) ? (task.labels as string[]) : undefined,
+          });
+        }
+      }
+    }
+
+    return result;
+  }
+
+  throw new Error('YAML must contain a "tasks" array or an "epics" hierarchy.');
 }
 
 function parseMarkdownImport(content: string): Partial<PlanTask>[] {

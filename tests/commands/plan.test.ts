@@ -406,6 +406,79 @@ describe('hive plan (CLI integration)', () => {
       expect(content).toContain('Export test');
     });
 
+    it('should import tasks from nested YAML with epics > stories > tasks', () => {
+      const nestedYaml = yamlStringify({
+        epics: [
+          {
+            id: 'EPIC-01',
+            title: 'Auth Epic',
+            target: 'backend',
+            priority: 'p1',
+            stories: [
+              {
+                id: 'US-01',
+                title: 'Login Story',
+                target: 'backend',
+                tasks: [
+                  { id: 'BE-01', title: 'Add login endpoint', target: 'backend' },
+                  { id: 'BE-02', title: 'Add auth middleware', target: 'backend', depends_on: ['BE-01'] },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+      const importFile = join(tmpDir, 'nested.yaml');
+      writeFileSync(importFile, nestedYaml, 'utf-8');
+
+      const { stdout } = runCli('plan import nested.yaml');
+      expect(stdout).toContain('Imported 4');
+
+      const planJson = JSON.parse(readFileSync(join(hivePath, 'plan.json'), 'utf-8'));
+      const epic = planJson.tasks.find((t: { id: string }) => t.id === 'EPIC-01');
+      expect(epic.type).toBe('epic');
+      const story = planJson.tasks.find((t: { id: string }) => t.id === 'US-01');
+      expect(story.type).toBe('story');
+      expect(story.parent).toBe('EPIC-01');
+      const task = planJson.tasks.find((t: { id: string }) => t.id === 'BE-01');
+      expect(task.type).toBe('task');
+      expect(task.parent).toBe('US-01');
+      expect(planJson.tasks).toHaveLength(4);
+    });
+
+    it('should inherit target from parent in nested YAML import', () => {
+      const nestedYaml = yamlStringify({
+        epics: [
+          {
+            id: 'EPIC-02',
+            title: 'Feature Epic',
+            target: 'frontend',
+            stories: [
+              {
+                id: 'US-02',
+                title: 'Feature Story',
+                // no target — should inherit from epic
+                tasks: [
+                  { id: 'FE-01', title: 'Build component' },
+                  // no target — should inherit from story (which inherited from epic)
+                ],
+              },
+            ],
+          },
+        ],
+      });
+      const importFile = join(tmpDir, 'inherit.yaml');
+      writeFileSync(importFile, nestedYaml, 'utf-8');
+
+      runCli('plan import inherit.yaml');
+
+      const planJson = JSON.parse(readFileSync(join(hivePath, 'plan.json'), 'utf-8'));
+      const story = planJson.tasks.find((t: { id: string }) => t.id === 'US-02');
+      expect(story.target).toBe('frontend');
+      const task = planJson.tasks.find((t: { id: string }) => t.id === 'FE-01');
+      expect(task.target).toBe('frontend');
+    });
+
     it('should skip duplicate IDs on import', () => {
       runCli('plan add backend "Existing" --id DUP-IMP');
       const yamlContent = yamlStringify({
