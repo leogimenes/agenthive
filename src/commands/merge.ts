@@ -8,7 +8,7 @@ import { loadConfig, resolveHiveRoot, resolveAllAgents } from '../core/config.js
 import { getMainBranch } from '../core/worktree.js';
 import { loadPlan, getChildren } from '../core/plan.js';
 import { resolveHivePath } from '../core/config.js';
-import type { ResolvedAgentConfig } from '../types/config.js';
+import type { ResolvedAgentConfig, DeliveryConfig } from '../types/config.js';
 
 const exec = promisify(execFile);
 
@@ -864,10 +864,112 @@ async function runEpicMerge(
   const successCount = results.filter((r) => r.status === 'squashed').length;
   if (successCount > 0) {
     console.log('');
-    console.log(`  Branch ${chalk.cyan(epicBranch)} is ready. Push with:`);
-    console.log(`    ${chalk.cyan(`git push origin ${epicBranch}`)}`);
+    await applyDeliveryStrategy(hiveRoot, epicBranch, mainBranch, config.delivery);
   }
   console.log('');
+}
+
+// ── Delivery strategy ──────────────────────────────────────────────
+
+/**
+ * Apply the configured delivery strategy after an epic branch is ready.
+ *
+ * - auto-merge:   Push the epic branch directly onto base_branch (fast-forward).
+ * - pull-request: Create a GitHub PR via `gh pr create`.
+ * - manual:       Print instructions for the user to push manually.
+ */
+async function applyDeliveryStrategy(
+  hiveRoot: string,
+  epicBranch: string,
+  mainBranch: string,
+  delivery: DeliveryConfig,
+): Promise<void> {
+  const baseBranch = delivery.base_branch ?? mainBranch;
+
+  switch (delivery.strategy) {
+    case 'auto-merge': {
+      console.log(chalk.bold(`  Delivery strategy: ${chalk.cyan('auto-merge')}`));
+      console.log(`  Pushing ${chalk.cyan(epicBranch)} → ${chalk.cyan(baseBranch)}...`);
+      try {
+        await exec('git', ['push', 'origin', `${epicBranch}:${baseBranch}`], { cwd: hiveRoot });
+        console.log(`  ${chalk.green('✓')} Merged into ${chalk.cyan(baseBranch)} on origin`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`  ${chalk.red('✗')} Auto-merge failed: ${msg}`);
+        console.log(`  Push manually: ${chalk.cyan(`git push origin ${epicBranch}:${baseBranch}`)}`);
+      }
+      break;
+    }
+
+    case 'pull-request': {
+      console.log(chalk.bold(`  Delivery strategy: ${chalk.cyan('pull-request')}`));
+      console.log(`  Pushing ${chalk.cyan(epicBranch)} to origin and creating PR...`);
+
+      // Push the epic branch to origin
+      try {
+        await exec('git', ['push', '--force-with-lease', 'origin', `${epicBranch}:${epicBranch}`], { cwd: hiveRoot });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`  ${chalk.red('✗')} Push failed: ${msg}`);
+        break;
+      }
+
+      // Build commit summary for PR body
+      let commits: Array<{ sha: string; subject: string }> = [];
+      try {
+        commits = await getCommitList(hiveRoot, epicBranch, baseBranch);
+      } catch {
+        // Best-effort
+      }
+
+      const taskIds = extractTaskIds(commits.map((c) => c.subject));
+      const tasksSection = taskIds.length > 0
+        ? taskIds.map((id) => `- ${id}`).join('\n')
+        : '_No task IDs found in commit messages._';
+      const commitsSection = commits.length > 0
+        ? commits.map((c) => `- \`${c.sha.slice(0, 7)}\` ${c.subject}`).join('\n')
+        : '_No commits._';
+
+      const prBody = [
+        '## Tasks Completed',
+        '',
+        tasksSection,
+        '',
+        '## Commit Summary',
+        '',
+        commitsSection,
+        '',
+        '---',
+        `_Created by AgentHive \`hive merge --epic\` with strategy \`pull-request\`_`,
+      ].join('\n');
+
+      const prTitle = `epic(${epicBranch.replace('epic/', '')}): deliver epic branch`;
+
+      try {
+        const { stdout: prUrl } = await exec(
+          'gh',
+          ['pr', 'create', '--base', baseBranch, '--head', epicBranch, '--title', prTitle, '--body', prBody],
+          { cwd: hiveRoot },
+        );
+        console.log(`  ${chalk.green('✓')} PR created: ${chalk.cyan(prUrl.trim())}`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`  ${chalk.red('✗')} PR creation failed: ${msg}`);
+        console.log(`  Create PR manually: ${chalk.cyan(`gh pr create --base ${baseBranch} --head ${epicBranch}`)}`);
+      }
+      break;
+    }
+
+    case 'manual':
+    default: {
+      console.log(`  Branch ${chalk.cyan(epicBranch)} is ready. Push with:`);
+      console.log(`    ${chalk.cyan(`git push origin ${epicBranch}`)}`);
+      if (delivery.strategy !== 'manual') {
+        console.log(chalk.gray(`  (delivery.strategy is "${delivery.strategy}" — treated as manual)`));
+      }
+      break;
+    }
+  }
 }
 
 // ── PR creation helpers ────────────────────────────────────────────

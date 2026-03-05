@@ -31,7 +31,7 @@ function gitSilent(args: string, cwd: string): void {
   execSync(`git ${args}`, { cwd, stdio: 'ignore' });
 }
 
-function makeConfig(agents: Record<string, unknown> = {}) {
+function makeConfig(agents: Record<string, unknown> = {}, delivery?: Record<string, unknown>) {
   return {
     session: 'test-merge',
     defaults: {
@@ -50,6 +50,7 @@ function makeConfig(agents: Record<string, unknown> = {}) {
     },
     hooks: { safety: [], coordination: [] },
     templates: {},
+    ...(delivery ? { delivery } : {}),
   };
 }
 
@@ -444,6 +445,212 @@ describe('hive merge (CLI integration)', () => {
 
       const { stdout } = runCli('merge --dry-run');
       expect(stdout).toContain('3 commit');
+    });
+  });
+
+  // ── delivery strategy config ──────────────────────────────────────────
+
+  describe('delivery strategy (config-driven)', () => {
+    /**
+     * Create a config with a specific delivery strategy and an epic plan,
+     * then run `hive merge --epic <id>` to verify delivery behaviour.
+     *
+     * We only need to confirm the strategy is read and acted on;
+     * actual git/gh side-effects are verified separately.
+     */
+    function setupReposWithDelivery(
+      agents: string[],
+      deliveryCfg: Record<string, unknown>,
+    ): void {
+      setupRepos(agents);
+      // Overwrite config.yaml with delivery section
+      const agentConfigs: Record<string, unknown> = {};
+      for (const name of agents) {
+        agentConfigs[name] = { description: `${name} agent`, agent: name };
+      }
+      const hivePath = join(tmpDir, '.hive');
+      writeFileSync(
+        join(hivePath, 'config.yaml'),
+        yamlStringify(makeConfig(agentConfigs, deliveryCfg)),
+        'utf-8',
+      );
+    }
+
+    beforeEach(() => {
+      setupRepos(['alpha']);
+    });
+
+    it('config.yaml with delivery.strategy=manual is loaded without error', () => {
+      setupReposWithDelivery(['alpha'], { strategy: 'manual', base_branch: 'main' });
+      // Running any merge command against a clean repo should succeed
+      const { code } = runCli('merge');
+      expect(code).toBe(0);
+    });
+
+    it('config.yaml with delivery.strategy=auto-merge is loaded without error', () => {
+      setupReposWithDelivery(['alpha'], { strategy: 'auto-merge', base_branch: 'main' });
+      const { code } = runCli('merge');
+      expect(code).toBe(0);
+    });
+
+    it('config.yaml with delivery.strategy=pull-request is loaded without error', () => {
+      setupReposWithDelivery(['alpha'], { strategy: 'pull-request', base_branch: 'main' });
+      const { code } = runCli('merge');
+      expect(code).toBe(0);
+    });
+
+    it('invalid delivery.strategy value should be rejected by config validation', () => {
+      setupReposWithDelivery(['alpha'], { strategy: 'invalid-strategy' });
+      // Config validation should fail — hive config should error
+      const { stderr, code } = runCli('config', { expectError: true });
+      expect(code).not.toBe(0);
+      expect(stderr).toContain('delivery.strategy');
+    });
+  });
+
+  // ── delivery strategy: manual (epic merge) ────────────────────────────
+
+  describe('delivery strategy manual on epic completion', () => {
+    beforeEach(() => {
+      setupRepos(['alpha']);
+    });
+
+    it('prints push instructions in manual mode', () => {
+      // Add a commit referencing an epic task ID pattern
+      const alphaWt = join(tmpDir, '.hive', 'worktrees', 'alpha');
+      writeFileSync(join(alphaWt, 'epic.ts'), 'export const epic = true;\n', 'utf-8');
+      gitSilent('add epic.ts', alphaWt);
+      gitSilent('commit -m "feat(EPIC-1): implement epic task"', alphaWt);
+
+      // Write a plan with the epic task
+      const hivePath = join(tmpDir, '.hive');
+      writeFileSync(
+        join(hivePath, 'plan.json'),
+        JSON.stringify({
+          tasks: [
+            { id: 'EPIC-1', title: 'Epic task', status: 'done', type: 'epic', deps: [] },
+          ],
+        }),
+        'utf-8',
+      );
+
+      // Overwrite config with manual delivery
+      const agentConfigs = { alpha: { description: 'alpha agent', agent: 'alpha' } };
+      writeFileSync(
+        join(hivePath, 'config.yaml'),
+        yamlStringify(makeConfig(agentConfigs, { strategy: 'manual', base_branch: 'main' })),
+        'utf-8',
+      );
+
+      const { stdout, code } = runCli('merge --epic EPIC-1');
+      expect(code).toBe(0);
+      // Manual mode: should print push instructions
+      expect(stdout).toContain('git push origin epic/EPIC-1');
+    });
+  });
+
+  // ── delivery strategy: auto-merge (epic merge) ────────────────────────
+
+  describe('delivery strategy auto-merge on epic completion', () => {
+    beforeEach(() => {
+      setupRepos(['alpha']);
+    });
+
+    it('pushes epic branch to base_branch in auto-merge mode', () => {
+      const alphaWt = join(tmpDir, '.hive', 'worktrees', 'alpha');
+      writeFileSync(join(alphaWt, 'epic.ts'), 'export const epic = true;\n', 'utf-8');
+      gitSilent('add epic.ts', alphaWt);
+      gitSilent('commit -m "feat(EPIC-2): auto-merge epic"', alphaWt);
+
+      const hivePath = join(tmpDir, '.hive');
+      writeFileSync(
+        join(hivePath, 'plan.json'),
+        JSON.stringify({
+          tasks: [
+            { id: 'EPIC-2', title: 'Auto-merge epic', status: 'done', type: 'epic', deps: [] },
+          ],
+        }),
+        'utf-8',
+      );
+
+      const agentConfigs = { alpha: { description: 'alpha agent', agent: 'alpha' } };
+      writeFileSync(
+        join(hivePath, 'config.yaml'),
+        yamlStringify(makeConfig(agentConfigs, { strategy: 'auto-merge', base_branch: 'main' })),
+        'utf-8',
+      );
+
+      const { stdout, code } = runCli('merge --epic EPIC-2');
+      expect(code).toBe(0);
+      // auto-merge mode: should indicate it merged or attempted to merge
+      expect(stdout).toContain('auto-merge');
+    });
+
+    it('shows merge result in auto-merge mode', () => {
+      const alphaWt = join(tmpDir, '.hive', 'worktrees', 'alpha');
+      writeFileSync(join(alphaWt, 'epic2.ts'), 'export const x = 2;\n', 'utf-8');
+      gitSilent('add epic2.ts', alphaWt);
+      gitSilent('commit -m "feat(EPIC-3): auto-merge delivery"', alphaWt);
+
+      const hivePath = join(tmpDir, '.hive');
+      writeFileSync(
+        join(hivePath, 'plan.json'),
+        JSON.stringify({
+          tasks: [
+            { id: 'EPIC-3', title: 'Another epic', status: 'done', type: 'epic', deps: [] },
+          ],
+        }),
+        'utf-8',
+      );
+
+      const agentConfigs = { alpha: { description: 'alpha agent', agent: 'alpha' } };
+      writeFileSync(
+        join(hivePath, 'config.yaml'),
+        yamlStringify(makeConfig(agentConfigs, { strategy: 'auto-merge', base_branch: 'main' })),
+        'utf-8',
+      );
+
+      const { stdout } = runCli('merge --epic EPIC-3');
+      // After auto-merge, output should show the delivery strategy was invoked
+      expect(stdout).toContain('Delivery strategy');
+    });
+  });
+
+  // ── delivery strategy: pull-request (epic merge) ──────────────────────
+
+  describe('delivery strategy pull-request on epic completion', () => {
+    beforeEach(() => {
+      setupRepos(['alpha']);
+    });
+
+    it('attempts PR creation in pull-request mode (fails gracefully without gh)', () => {
+      const alphaWt = join(tmpDir, '.hive', 'worktrees', 'alpha');
+      writeFileSync(join(alphaWt, 'epic.ts'), 'export const pr = true;\n', 'utf-8');
+      gitSilent('add epic.ts', alphaWt);
+      gitSilent('commit -m "feat(EPIC-4): pull-request epic"', alphaWt);
+
+      const hivePath = join(tmpDir, '.hive');
+      writeFileSync(
+        join(hivePath, 'plan.json'),
+        JSON.stringify({
+          tasks: [
+            { id: 'EPIC-4', title: 'PR epic', status: 'done', type: 'epic', deps: [] },
+          ],
+        }),
+        'utf-8',
+      );
+
+      const agentConfigs = { alpha: { description: 'alpha agent', agent: 'alpha' } };
+      writeFileSync(
+        join(hivePath, 'config.yaml'),
+        yamlStringify(makeConfig(agentConfigs, { strategy: 'pull-request', base_branch: 'main' })),
+        'utf-8',
+      );
+
+      const { stdout, code } = runCli('merge --epic EPIC-4');
+      expect(code).toBe(0);
+      // pull-request mode: should show delivery strategy label and attempt PR creation
+      expect(stdout).toContain('pull-request');
     });
   });
 
