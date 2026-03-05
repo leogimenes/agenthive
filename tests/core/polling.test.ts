@@ -36,7 +36,7 @@ vi.mock('../../src/core/notify.js', () => ({
 
 import { spawn } from 'node:child_process';
 import { syncWorktree, rebaseAndPush } from '../../src/core/worktree.js';
-import { checkDailyBudget } from '../../src/core/budget.js';
+import { checkDailyBudget, recordSpending, logTaskCost } from '../../src/core/budget.js';
 import { AgentLoop } from '../../src/core/polling.js';
 import { savePlan, loadPlan } from '../../src/core/plan.js';
 import { releaseLock } from '../../src/core/lock.js';
@@ -106,9 +106,22 @@ function makePlan(tasks: Partial<PlanTask>[] = []): Plan {
 }
 
 /** Returns a fake child_process EventEmitter that exits with the given code. */
-function fakeChild(exitCode: number): ReturnType<typeof spawn> {
+function fakeChild(exitCode: number, stdoutData = ''): ReturnType<typeof spawn> {
   const handlers: Record<string, (arg?: unknown) => void> = {};
+  const stdoutHandlers: Record<string, (arg?: unknown) => void> = {};
+
+  const stdoutEmitter = {
+    on: vi.fn().mockImplementation((event: string, handler: (arg?: unknown) => void) => {
+      stdoutHandlers[event] = handler;
+      if (event === 'data' && stdoutData) {
+        setTimeout(() => handler(Buffer.from(stdoutData)), 5);
+      }
+      return stdoutEmitter;
+    }),
+  };
+
   const emitter = {
+    stdout: stdoutEmitter,
     on: vi.fn().mockImplementation((event: string, handler: (arg?: unknown) => void) => {
       handlers[event] = handler;
       if (event === 'close') {
@@ -462,5 +475,177 @@ describe('AgentLoop — retry policy for transient plan task failures (BUG 9)', 
     expect(task!.status).toBe('failed');
     // retry_count should be max_retries + 1 (one final failing attempt)
     expect(task!.retry_count).toBe(3);
+  });
+});
+
+// ── BE-10: Real cost tracking using claude CLI JSON output ────────────
+
+const VALID_COST_JSON = JSON.stringify({
+  type: 'result',
+  subtype: 'success',
+  is_error: false,
+  total_cost_usd: 0.04252125,
+  duration_ms: 2169,
+  num_turns: 1,
+  session_id: 'test-session-uuid',
+  usage: { input_tokens: 500, output_tokens: 200 },
+  modelUsage: { 'claude-sonnet-4-5': { costUSD: 0.04252125 } },
+});
+
+describe('AgentLoop — real cost tracking (BE-10)', () => {
+  let hivePath: string;
+
+  beforeEach(() => {
+    hivePath = mkdtempSync(join(tmpdir(), 'hive-cost-test-'));
+    mkdirSync(join(hivePath, 'state'), { recursive: true });
+    writeFileSync(join(hivePath, 'chat.md'), '', 'utf-8');
+
+    vi.mocked(checkDailyBudget).mockReturnValue({ allowed: true, spent: 0 });
+    vi.mocked(syncWorktree).mockResolvedValue({ success: true });
+    vi.mocked(rebaseAndPush).mockResolvedValue({ success: true });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    releaseLock(hivePath, 'backend');
+    rmSync(hivePath, { recursive: true, force: true });
+  });
+
+  it('should include --output-format json in claude CLI args', async () => {
+    // Arrange
+    const plan = makePlan([{ id: 'COST-01', title: 'Cost task', target: 'backend', status: 'ready' }]);
+    savePlan(hivePath, plan);
+
+    vi.mocked(spawn).mockReturnValue(fakeChild(0, VALID_COST_JSON));
+
+    // Act
+    await runLoopUntilTaskDone(hivePath, 'COST-01');
+
+    // Assert: spawn was called with --output-format json
+    const spawnArgs = vi.mocked(spawn).mock.calls[0];
+    const cliArgs = spawnArgs[1] as string[];
+    expect(cliArgs).toContain('--output-format');
+    const idx = cliArgs.indexOf('--output-format');
+    expect(cliArgs[idx + 1]).toBe('json');
+  });
+
+  it('should call recordSpending with parsed total_cost_usd for successful plan task', async () => {
+    // Arrange
+    const plan = makePlan([{ id: 'COST-02', title: 'Cost task', target: 'backend', status: 'ready' }]);
+    savePlan(hivePath, plan);
+
+    vi.mocked(spawn).mockReturnValue(fakeChild(0, VALID_COST_JSON));
+
+    // Act
+    await runLoopUntilTaskDone(hivePath, 'COST-02');
+
+    // Assert: recordSpending called with real cost (0.04252125), not flat budget (2)
+    expect(vi.mocked(recordSpending)).toHaveBeenCalledWith(
+      hivePath,
+      'backend',
+      0.04252125,
+    );
+  });
+
+  it('should call logTaskCost with parsed total_cost_usd for successful plan task', async () => {
+    // Arrange
+    const plan = makePlan([{ id: 'COST-03', title: 'Cost task', target: 'backend', status: 'ready' }]);
+    savePlan(hivePath, plan);
+
+    vi.mocked(spawn).mockReturnValue(fakeChild(0, VALID_COST_JSON));
+
+    // Act
+    await runLoopUntilTaskDone(hivePath, 'COST-03');
+
+    // Assert: logTaskCost called with real cost
+    const logCalls = vi.mocked(logTaskCost).mock.calls;
+    expect(logCalls.length).toBeGreaterThan(0);
+    const [, , , amount] = logCalls[logCalls.length - 1];
+    expect(amount).toBe(0.04252125);
+  });
+
+  it('should fall back to config budget when stdout is empty', async () => {
+    // Arrange: config budget = 2
+    const plan = makePlan([{ id: 'COST-04', title: 'Cost task', target: 'backend', status: 'ready' }]);
+    savePlan(hivePath, plan);
+
+    // fakeChild with no stdout data → parseClaudeCost returns fallback
+    vi.mocked(spawn).mockReturnValue(fakeChild(0, ''));
+
+    // Act
+    await runLoopUntilTaskDone(hivePath, 'COST-04');
+
+    // Assert: recordSpending called with fallback budget (2)
+    expect(vi.mocked(recordSpending)).toHaveBeenCalledWith(hivePath, 'backend', 2);
+  });
+
+  it('should fall back to config budget when stdout JSON is missing total_cost_usd', async () => {
+    // Arrange: JSON without total_cost_usd field
+    const noTotalCost = JSON.stringify({ type: 'result', subtype: 'success' });
+    const plan = makePlan([{ id: 'COST-05', title: 'Cost task', target: 'backend', status: 'ready' }]);
+    savePlan(hivePath, plan);
+
+    vi.mocked(spawn).mockReturnValue(fakeChild(0, noTotalCost));
+
+    // Act
+    await runLoopUntilTaskDone(hivePath, 'COST-05');
+
+    // Assert: falls back to config budget
+    expect(vi.mocked(recordSpending)).toHaveBeenCalledWith(hivePath, 'backend', 2);
+  });
+
+  it('should extract cost from last JSON line when stdout has warning text before JSON', async () => {
+    // Arrange: stdout has some warning text followed by the JSON on the last line
+    const withWarnings = `Warning: some deprecation notice\nAnother warning line\n${VALID_COST_JSON}`;
+    const plan = makePlan([{ id: 'COST-06', title: 'Cost task', target: 'backend', status: 'ready' }]);
+    savePlan(hivePath, plan);
+
+    vi.mocked(spawn).mockReturnValue(fakeChild(0, withWarnings));
+
+    // Act
+    await runLoopUntilTaskDone(hivePath, 'COST-06');
+
+    // Assert: real cost extracted despite warnings
+    expect(vi.mocked(recordSpending)).toHaveBeenCalledWith(hivePath, 'backend', 0.04252125);
+  });
+
+  it('should fall back to config budget when stdout is not valid JSON', async () => {
+    // Arrange: stdout is not parseable JSON
+    const plan = makePlan([{ id: 'COST-07', title: 'Cost task', target: 'backend', status: 'ready' }]);
+    savePlan(hivePath, plan);
+
+    vi.mocked(spawn).mockReturnValue(fakeChild(0, '{not valid json}'));
+
+    // Act
+    await runLoopUntilTaskDone(hivePath, 'COST-07');
+
+    // Assert: falls back to config budget
+    expect(vi.mocked(recordSpending)).toHaveBeenCalledWith(hivePath, 'backend', 2);
+  });
+
+  it('should use real cost in recordSpending for failed plan task when JSON is available', async () => {
+    // Arrange: plan task with max_retries: 0 so it fails immediately
+    const failCostJson = JSON.stringify({
+      type: 'result',
+      subtype: 'error',
+      is_error: true,
+      total_cost_usd: 0.01,
+    });
+    const plan = makePlan([{
+      id: 'COST-08',
+      title: 'Failing cost task',
+      target: 'backend',
+      status: 'ready',
+      max_retries: 0,
+    }]);
+    savePlan(hivePath, plan);
+
+    vi.mocked(spawn).mockReturnValue(fakeChild(1, failCostJson));
+
+    // Act
+    await runLoopUntilTaskDone(hivePath, 'COST-08', 6000);
+
+    // Assert: real cost used even on failure
+    expect(vi.mocked(recordSpending)).toHaveBeenCalledWith(hivePath, 'backend', 0.01);
   });
 });

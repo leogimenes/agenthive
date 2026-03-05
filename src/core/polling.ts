@@ -170,8 +170,8 @@ export class AgentLoop {
 
       if (result.success) {
         this.consecutiveFails = 0;
-        recordSpending(this.hivePath, this.agent.name, this.agent.budget);
-        logTaskCost(this.hivePath, this.agent.name, task.body, this.agent.budget, true);
+        recordSpending(this.hivePath, this.agent.name, result.cost);
+        logTaskCost(this.hivePath, this.agent.name, task.body, result.cost, true);
 
         // Rebase and push after successful task
         const pushResult = await rebaseAndPush(this.agent.worktreePath);
@@ -190,8 +190,8 @@ export class AgentLoop {
         await sleep(5000); // Brief pause before next check
       } else {
         this.consecutiveFails++;
-        recordSpending(this.hivePath, this.agent.name, this.agent.budget);
-        logTaskCost(this.hivePath, this.agent.name, task.body, this.agent.budget, false);
+        recordSpending(this.hivePath, this.agent.name, result.cost);
+        logTaskCost(this.hivePath, this.agent.name, task.body, result.cost, false);
 
         if (this.consecutiveFails >= MAX_CONSECUTIVE_FAILS) {
           const power = this.consecutiveFails - MAX_CONSECUTIVE_FAILS;
@@ -242,8 +242,8 @@ export class AgentLoop {
         const planResult = await this.runTask(taskBody);
         if (planResult.success) {
           this.consecutiveFails = 0;
-          recordSpending(this.hivePath, this.agent.name, this.agent.budget);
-          logTaskCost(this.hivePath, this.agent.name, taskBody, this.agent.budget, true);
+          recordSpending(this.hivePath, this.agent.name, planResult.cost);
+          logTaskCost(this.hivePath, this.agent.name, taskBody, planResult.cost, true);
 
           // BUG 10 fix: Update plan task status INLINE in the success path.
           // reconcilePlanWithChat is the backup for cross-agent DONE messages only.
@@ -264,8 +264,8 @@ export class AgentLoop {
           await sleep(5000);
         } else {
           this.consecutiveFails++;
-          recordSpending(this.hivePath, this.agent.name, this.agent.budget);
-          logTaskCost(this.hivePath, this.agent.name, taskBody, this.agent.budget, false);
+          recordSpending(this.hivePath, this.agent.name, planResult.cost);
+          logTaskCost(this.hivePath, this.agent.name, taskBody, planResult.cost, false);
 
           // BUG 9 fix: Retry policy for transient failures.
           // Instead of leaving the task stuck in 'dispatched' forever, reset it
@@ -313,12 +313,14 @@ export class AgentLoop {
 
   /**
    * Run the claude agent for the given task description.
-   * Returns { success: true } on exit code 0,
-   * or { success: false, error: string } on spawn failure or non-zero exit.
+   * Returns { success: true, cost } on exit code 0,
+   * or { success: false, error, cost } on spawn failure or non-zero exit.
+   * The `cost` field holds the real USD spend from claude's JSON output,
+   * falling back to this.agent.budget if parsing fails.
    */
   private async runTask(
     taskDescription: string,
-  ): Promise<{ success: true } | { success: false; error: string }> {
+  ): Promise<{ success: true; cost: number; sessionId?: string } | { success: false; error: string; cost: number }> {
     const prompt = this.buildPrompt(taskDescription);
 
     this.log(`Executing: ${truncate(taskDescription, 100)}`);
@@ -328,6 +330,7 @@ export class AgentLoop {
       '--agent', this.agent.agent,
       '--no-session-persistence',
       '--max-budget-usd', String(this.agent.budget),
+      '--output-format', 'json',
     ];
 
     if (this.agent.skip_permissions) {
@@ -343,7 +346,8 @@ export class AgentLoop {
     return new Promise((resolve) => {
       const child = spawn('claude', args, {
         cwd: this.agent.worktreePath,
-        stdio: 'inherit',
+        // Capture stdout for JSON cost data; keep stderr visible in tmux
+        stdio: ['ignore', 'pipe', 'inherit'],
         env: {
           ...process.env,
           HIVE_CHAT_FILE: this.chatFilePath,
@@ -352,18 +356,24 @@ export class AgentLoop {
         },
       });
 
+      const stdoutChunks: Buffer[] = [];
+      child.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
+
       child.on('error', (err) => {
         this.log(`ERROR: Failed to spawn claude: ${(err as Error).message}`);
-        resolve({ success: false, error: `spawn failed: ${(err as Error).message}` });
+        resolve({ success: false, error: `spawn failed: ${(err as Error).message}`, cost: this.agent.budget });
       });
 
       child.on('close', (code) => {
+        const rawOutput = Buffer.concat(stdoutChunks).toString('utf-8');
+        const cost = parseClaudeCost(rawOutput, this.agent.budget);
+        const sessionId = parseClaudeSessionId(rawOutput);
         if (code === 0) {
           this.log('Task completed successfully.');
-          resolve({ success: true });
+          resolve({ success: true, cost, ...(sessionId ? { sessionId } : {}) });
         } else {
           this.log(`Task exited with code ${code}.`);
-          resolve({ success: false, error: `claude exited with code ${code}` });
+          resolve({ success: false, error: `claude exited with code ${code}`, cost });
         }
       });
     });
@@ -414,4 +424,50 @@ function sleep(ms: number): Promise<void> {
 
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 3) + '...' : s;
+}
+
+/**
+ * Parse total_cost_usd from claude CLI --output-format json output.
+ * Claude may emit warning text before the JSON object, so we scan backwards
+ * for the last line that starts with '{' and try to parse it.
+ * Returns the fallback value if parsing fails for any reason.
+ */
+export function parseClaudeCost(stdout: string, fallback: number): number {
+  const lines = stdout.trim().split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (line.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        if (typeof parsed['total_cost_usd'] === 'number') {
+          return parsed['total_cost_usd'] as number;
+        }
+      } catch {
+        // Continue scanning
+      }
+    }
+  }
+  return fallback;
+}
+
+/**
+ * Extract the session_id from claude CLI JSON output.
+ * Returns undefined if not present or parsing fails.
+ */
+export function parseClaudeSessionId(stdout: string): string | undefined {
+  const lines = stdout.trim().split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (line.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        if (typeof parsed['session_id'] === 'string') {
+          return parsed['session_id'] as string;
+        }
+      } catch {
+        // Continue scanning
+      }
+    }
+  }
+  return undefined;
 }
