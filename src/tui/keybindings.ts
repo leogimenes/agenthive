@@ -1,4 +1,4 @@
-export type Panel = 'status' | 'chat' | 'plan' | 'input' | 'transcript';
+export type Panel = 'status' | 'chat' | 'plan' | 'input' | 'transcript' | 'tree';
 
 export type Action =
   | { type: 'quit' }
@@ -47,6 +47,13 @@ export const HELP_ENTRIES = [
   { key: 'f', desc: 'Cycle status filter' },
   { key: 'a', desc: 'Cycle agent filter' },
   { key: 'Esc', desc: 'Close detail view' },
+  { key: '', desc: '' },
+  { key: '── Epic Tree ──', desc: '' },
+  { key: 'e', desc: 'Toggle epic tree panel' },
+  { key: 'j / k / ↑ / ↓', desc: 'Navigate nodes' },
+  { key: 'Space / Enter', desc: 'Expand / collapse epic or story' },
+  { key: 'G', desc: 'Jump to last node' },
+  { key: 'Esc', desc: 'Exit tree panel' },
   { key: '', desc: '' },
   { key: '── Transcript ──', desc: '' },
   { key: 't', desc: 'Toggle transcript panel' },

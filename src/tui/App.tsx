@@ -14,12 +14,14 @@ import { InputBar } from './components/InputBar.js';
 import { AgentDetail } from './components/AgentDetail.js';
 import { HelpOverlay } from './components/HelpOverlay.js';
 import { TranscriptPanel } from './components/TranscriptPanel.js';
+import { EpicTreePanel } from './components/EpicTreePanel.js';
+import { flattenTree, buildEpicTree } from './utils/epicTree.js';
 import { appendMessage, resolveChatPath } from '../core/chat.js';
 import { resolveHivePath, resolveAllAgents, loadConfig, resolveHiveRoot } from '../core/config.js';
 import { dispatchTask, loadPlan, savePlan } from '../core/plan.js';
 import type { MessageType } from '../types/config.js';
 
-const PANELS: Panel[] = ['status', 'chat', 'plan', 'input', 'transcript'];
+const PANELS: Panel[] = ['status', 'chat', 'plan', 'input', 'transcript', 'tree'];
 const VALID_TYPES = new Set(['REQUEST', 'STATUS', 'DONE', 'QUESTION', 'BLOCKER', 'ACK', 'WARN']);
 
 interface AppProps {
@@ -62,6 +64,11 @@ export function App({ cwd }: AppProps): React.ReactElement {
   const [planAgentFilter, setPlanAgentFilter] = useState<string | undefined>();
   const [planScroll, setPlanScroll] = useState(0);
   const planMaxVisible = Math.max(5, termHeight - 14);
+
+  // Epic tree panel state
+  const [treeSelectedIndex, setTreeSelectedIndex] = useState(0);
+  const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
+  const [treeScroll, setTreeScroll] = useState(0);
 
   // Computed
   const agentNames = status.agents.map((a) => a.name);
@@ -260,6 +267,11 @@ export function App({ cwd }: AppProps): React.ReactElement {
       setActivePanel('input');
       return;
     }
+    if (input === 'e') {
+      setActivePanel((prev) => prev === 'tree' ? 'status' : 'tree');
+      setTreeScroll(0);
+      return;
+    }
 
     // Status panel keys
     if (activePanel === 'status') {
@@ -394,6 +406,55 @@ export function App({ cwd }: AppProps): React.ReactElement {
       return;
     }
 
+    // Epic tree panel keys
+    if (activePanel === 'tree') {
+      if (key.escape || input === 'e') {
+        setActivePanel('status');
+        return;
+      }
+      // Compute rows for navigation
+      const treeNodes = buildEpicTree(planData.tasks);
+      const treeRows = flattenTree(treeNodes, treeExpanded);
+      if (input === 'j' || key.downArrow) {
+        const next = Math.min(treeSelectedIndex + 1, treeRows.length - 1);
+        setTreeSelectedIndex(next);
+        if (next >= treeScroll + planMaxVisible) {
+          setTreeScroll((prev) => prev + 1);
+        }
+        return;
+      }
+      if (input === 'k' || key.upArrow) {
+        const prev = Math.max(treeSelectedIndex - 1, 0);
+        setTreeSelectedIndex(prev);
+        if (prev < treeScroll) {
+          setTreeScroll((p) => Math.max(0, p - 1));
+        }
+        return;
+      }
+      if (input === ' ' || key.return) {
+        const selectedRow = treeRows[treeSelectedIndex];
+        if (selectedRow && selectedRow.node.children.length > 0) {
+          const taskId = selectedRow.node.task.id;
+          setTreeExpanded((prev) => {
+            const next = new Set(prev);
+            if (next.has(taskId)) {
+              next.delete(taskId);
+            } else {
+              next.add(taskId);
+            }
+            return next;
+          });
+        }
+        return;
+      }
+      if (input === 'G') {
+        setTreeScroll(0);
+        setTreeSelectedIndex(Math.max(0, treeRows.length - 1));
+        return;
+      }
+      return;
+    }
+
     // Transcript panel keys
     if (activePanel === 'transcript') {
       if (key.escape) {
@@ -449,7 +510,16 @@ export function App({ cwd }: AppProps): React.ReactElement {
           focused={activePanel === 'status'}
         />
 
-        {activePanel === 'transcript' ? (
+        {activePanel === 'tree' ? (
+          <EpicTreePanel
+            tasks={planData.tasks}
+            selectedIndex={treeSelectedIndex}
+            focused={true}
+            scrollOffset={treeScroll}
+            maxVisible={planMaxVisible}
+            expanded={treeExpanded}
+          />
+        ) : activePanel === 'transcript' ? (
           <TranscriptPanel
             agent={status.agents[transcriptAgent]}
             agents={status.agents}
