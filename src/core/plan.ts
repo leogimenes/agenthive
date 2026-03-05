@@ -12,6 +12,7 @@ import type {
   PlanUpdate,
   Priority,
   TaskStatus,
+  TaskType,
   DAGValidation,
 } from '../types/plan.js';
 import type { ChatMessage } from '../types/config.js';
@@ -401,25 +402,99 @@ export function getChildTasks(plan: Plan, parentId: string): PlanTask[] {
 }
 
 /**
+ * Get direct children of a task by parent ID.
+ * Alias of getChildTasks, provided for hierarchy-model API consistency.
+ */
+export function getChildren(plan: Plan, taskId: string): PlanTask[] {
+  return plan.tasks.filter((t) => t.parent === taskId);
+}
+
+/**
+ * Get all ancestors of a task by traversing the parent chain.
+ * Returns tasks ordered from root ancestor to direct parent.
+ * Stops at the first unresolvable or already-visited ID (cycle guard).
+ */
+export function getAncestors(plan: Plan, taskId: string): PlanTask[] {
+  const taskMap = new Map(plan.tasks.map((t) => [t.id, t]));
+  const ancestors: PlanTask[] = [];
+  const visited = new Set<string>();
+
+  let current = taskMap.get(taskId);
+  while (current?.parent) {
+    if (visited.has(current.parent)) break; // cycle guard
+    visited.add(current.parent);
+    const parent = taskMap.get(current.parent);
+    if (!parent) break;
+    ancestors.unshift(parent); // prepend so result is root-first
+    current = parent;
+  }
+
+  return ancestors;
+}
+
+/**
+ * Validate that a parent/child type relationship is structurally sound.
+ *
+ * Allowed hierarchy: epic → story → task
+ * - epic can parent story or task
+ * - story can parent task
+ * - task cannot parent any typed child
+ *
+ * When either task's type is undefined the relationship is considered valid
+ * (untyped tasks do not enforce hierarchy constraints).
+ */
+export function validateParentType(parent: PlanTask, child: PlanTask): boolean {
+  if (!parent.type || !child.type) return true;
+
+  const allowed: Record<TaskType, TaskType[]> = {
+    epic: ['story', 'task'],
+    story: ['task'],
+    task: [],
+  };
+
+  return allowed[parent.type].includes(child.type);
+}
+
+/**
  * Compute the rollup status for a parent task based on its children.
+ * Returns:
+ *   status: 'done' | 'blocked' | 'running' | 'ready' | 'open'
+ *   done, total, running, failed, blocked — progress counters
+ *
+ * Priority: blocked > done > running > ready > open
  */
 export function computeParentStatus(
   plan: Plan,
   parentId: string,
-): { status: string; done: number; total: number } {
+): { status: string; done: number; total: number; running: number; failed: number; blocked: number } {
   const children = getChildTasks(plan, parentId);
-  if (children.length === 0) return { status: 'open', done: 0, total: 0 };
+  if (children.length === 0) {
+    return { status: 'open', done: 0, total: 0, running: 0, failed: 0, blocked: 0 };
+  }
 
   const done = children.filter((c) => c.status === 'done').length;
   const failed = children.filter((c) => c.status === 'failed').length;
+  const blocked = children.filter((c) => c.status === 'blocked').length;
   const running = children.filter((c) =>
     c.status === 'running' || c.status === 'dispatched',
   ).length;
+  const ready = children.filter((c) => c.status === 'ready').length;
+  const total = children.length;
 
-  if (done === children.length) return { status: 'done', done, total: children.length };
-  if (failed > 0) return { status: 'warning', done, total: children.length };
-  if (running > 0) return { status: 'running', done, total: children.length };
-  return { status: 'progress', done, total: children.length };
+  let status: string;
+  if (failed > 0 || blocked > 0) {
+    status = 'blocked';
+  } else if (done === total) {
+    status = 'done';
+  } else if (running > 0) {
+    status = 'running';
+  } else if (ready > 0) {
+    status = 'ready';
+  } else {
+    status = 'open';
+  }
+
+  return { status, done, total, running, failed, blocked };
 }
 
 // ── Critical path ────────────────────────────────────────────────────

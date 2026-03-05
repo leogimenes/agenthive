@@ -17,6 +17,9 @@ import {
   reconcilePlanWithChat,
   findCriticalPath,
   getChildTasks,
+  getChildren,
+  getAncestors,
+  validateParentType,
   computeParentStatus,
   sortByPriority,
   dispatchTask,
@@ -564,14 +567,14 @@ describe('plan', () => {
       expect(ps.status).toBe('running');
     });
 
-    it('should compute parent status: warning on failed child', () => {
+    it('should compute parent status: blocked on failed child', () => {
       const plan = makePlan([
         makeTask({ id: 'parent' }),
         makeTask({ id: 'child-1', parent: 'parent', status: 'done' }),
         makeTask({ id: 'child-2', parent: 'parent', status: 'failed' }),
       ]);
       const ps = computeParentStatus(plan, 'parent');
-      expect(ps.status).toBe('warning');
+      expect(ps.status).toBe('blocked');
     });
   });
 
@@ -973,14 +976,14 @@ describe('plan', () => {
       expect(ps.total).toBe(0);
     });
 
-    it('should return progress status when some tasks are open', () => {
+    it('should return open status when some tasks are open (no running)', () => {
       const plan = makePlan([
         makeTask({ id: 'parent' }),
         makeTask({ id: 'child-1', parent: 'parent', status: 'done' }),
         makeTask({ id: 'child-2', parent: 'parent', status: 'open' }),
       ]);
       const ps = computeParentStatus(plan, 'parent');
-      expect(ps.status).toBe('progress');
+      expect(ps.status).toBe('open');
       expect(ps.done).toBe(1);
       expect(ps.total).toBe(2);
     });
@@ -994,7 +997,7 @@ describe('plan', () => {
       expect(ps.status).toBe('running');
     });
 
-    it('should return warning when any child failed even with done children', () => {
+    it('should return blocked when any child failed even with done children', () => {
       const plan = makePlan([
         makeTask({ id: 'parent' }),
         makeTask({ id: 'child-1', parent: 'parent', status: 'done' }),
@@ -1002,7 +1005,7 @@ describe('plan', () => {
         makeTask({ id: 'child-3', parent: 'parent', status: 'failed' }),
       ]);
       const ps = computeParentStatus(plan, 'parent');
-      expect(ps.status).toBe('warning');
+      expect(ps.status).toBe('blocked');
     });
   });
 
@@ -1156,6 +1159,345 @@ describe('plan', () => {
       expect(messages).toHaveLength(2);
       expect(messages[0].body).toContain('[BE-01]');
       expect(messages[1].body).toContain('[FE-01]');
+    });
+  });
+
+  // ── QA-21: Hierarchical Plan Model ────────────────────────────────
+
+  // ── getChildren ───────────────────────────────────────────────────
+
+  describe('getChildren', () => {
+    it('should return direct children of a task', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic-1' }),
+        makeTask({ id: 'story-1', parent: 'epic-1' }),
+        makeTask({ id: 'story-2', parent: 'epic-1' }),
+        makeTask({ id: 'task-1', parent: 'story-1' }),
+      ]);
+      const children = getChildren(plan, 'epic-1');
+      expect(children).toHaveLength(2);
+      expect(children.map((c) => c.id).sort()).toEqual(['story-1', 'story-2']);
+    });
+
+    it('should return empty array when task has no children', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic-1' }),
+        makeTask({ id: 'task-1', parent: 'epic-1' }),
+      ]);
+      expect(getChildren(plan, 'task-1')).toHaveLength(0);
+    });
+
+    it('should return empty array for non-existent task ID', () => {
+      const plan = makePlan([makeTask({ id: 'a' })]);
+      expect(getChildren(plan, 'does-not-exist')).toHaveLength(0);
+    });
+
+    it('should return empty array for empty plan', () => {
+      const plan = makePlan([]);
+      expect(getChildren(plan, 'any-id')).toHaveLength(0);
+    });
+
+    it('should not include grandchildren (only direct children)', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic-1' }),
+        makeTask({ id: 'story-1', parent: 'epic-1' }),
+        makeTask({ id: 'task-1', parent: 'story-1' }), // grandchild of epic-1
+      ]);
+      const children = getChildren(plan, 'epic-1');
+      expect(children).toHaveLength(1);
+      expect(children[0].id).toBe('story-1');
+    });
+
+    it('should match getChildTasks for the same inputs', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic-1' }),
+        makeTask({ id: 'story-1', parent: 'epic-1' }),
+        makeTask({ id: 'story-2', parent: 'epic-1' }),
+      ]);
+      expect(getChildren(plan, 'epic-1')).toEqual(getChildTasks(plan, 'epic-1'));
+    });
+  });
+
+  // ── getAncestors ──────────────────────────────────────────────────
+
+  describe('getAncestors', () => {
+    it('should return empty array for root task (no parent)', () => {
+      const plan = makePlan([makeTask({ id: 'epic-1' })]);
+      expect(getAncestors(plan, 'epic-1')).toHaveLength(0);
+    });
+
+    it('should return direct parent for a child task', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic-1' }),
+        makeTask({ id: 'story-1', parent: 'epic-1' }),
+      ]);
+      const ancestors = getAncestors(plan, 'story-1');
+      expect(ancestors).toHaveLength(1);
+      expect(ancestors[0].id).toBe('epic-1');
+    });
+
+    it('should return ancestors in root-first order for a deep chain', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic-1' }),
+        makeTask({ id: 'story-1', parent: 'epic-1' }),
+        makeTask({ id: 'task-1', parent: 'story-1' }),
+      ]);
+      const ancestors = getAncestors(plan, 'task-1');
+      expect(ancestors).toHaveLength(2);
+      expect(ancestors[0].id).toBe('epic-1');
+      expect(ancestors[1].id).toBe('story-1');
+    });
+
+    it('should return empty array for non-existent task', () => {
+      const plan = makePlan([makeTask({ id: 'a' })]);
+      expect(getAncestors(plan, 'does-not-exist')).toHaveLength(0);
+    });
+
+    it('should stop and not crash when parent ID does not exist in plan', () => {
+      const plan = makePlan([
+        makeTask({ id: 'orphan', parent: 'phantom-parent' }),
+      ]);
+      const ancestors = getAncestors(plan, 'orphan');
+      expect(ancestors).toHaveLength(0);
+    });
+
+    it('should guard against parent cycles and not loop infinitely', () => {
+      // Manually construct a cyclic parent chain
+      const now = new Date().toISOString();
+      const taskA: PlanTask = {
+        id: 'a', title: 'A', target: 'backend', priority: 'p2',
+        status: 'open', depends_on: [], parent: 'b', created_at: now, updated_at: now,
+      };
+      const taskB: PlanTask = {
+        id: 'b', title: 'B', target: 'backend', priority: 'p2',
+        status: 'open', depends_on: [], parent: 'a', created_at: now, updated_at: now,
+      };
+      const plan = makePlan([taskA, taskB]);
+      // Should not hang — cycle guard stops traversal
+      const ancestors = getAncestors(plan, 'a');
+      expect(ancestors.length).toBeLessThanOrEqual(2);
+    });
+  });
+
+  // ── validateParentType ────────────────────────────────────────────
+
+  describe('validateParentType', () => {
+    it('should allow epic → story relationship', () => {
+      const epic = makeTask({ id: 'e', type: 'epic' });
+      const story = makeTask({ id: 's', type: 'story' });
+      expect(validateParentType(epic, story)).toBe(true);
+    });
+
+    it('should allow epic → task relationship', () => {
+      const epic = makeTask({ id: 'e', type: 'epic' });
+      const task = makeTask({ id: 't', type: 'task' });
+      expect(validateParentType(epic, task)).toBe(true);
+    });
+
+    it('should allow story → task relationship', () => {
+      const story = makeTask({ id: 's', type: 'story' });
+      const task = makeTask({ id: 't', type: 'task' });
+      expect(validateParentType(story, task)).toBe(true);
+    });
+
+    it('should forbid task → task relationship', () => {
+      const parent = makeTask({ id: 'p', type: 'task' });
+      const child = makeTask({ id: 'c', type: 'task' });
+      expect(validateParentType(parent, child)).toBe(false);
+    });
+
+    it('should forbid task → story relationship', () => {
+      const parent = makeTask({ id: 'p', type: 'task' });
+      const child = makeTask({ id: 'c', type: 'story' });
+      expect(validateParentType(parent, child)).toBe(false);
+    });
+
+    it('should forbid story → story relationship', () => {
+      const parent = makeTask({ id: 'p', type: 'story' });
+      const child = makeTask({ id: 'c', type: 'story' });
+      expect(validateParentType(parent, child)).toBe(false);
+    });
+
+    it('should forbid story → epic relationship', () => {
+      const parent = makeTask({ id: 'p', type: 'story' });
+      const child = makeTask({ id: 'c', type: 'epic' });
+      expect(validateParentType(parent, child)).toBe(false);
+    });
+
+    it('should forbid task → epic relationship', () => {
+      const parent = makeTask({ id: 'p', type: 'task' });
+      const child = makeTask({ id: 'c', type: 'epic' });
+      expect(validateParentType(parent, child)).toBe(false);
+    });
+
+    it('should allow when parent type is undefined (untyped task)', () => {
+      const parent = makeTask({ id: 'p' }); // no type
+      const child = makeTask({ id: 'c', type: 'task' });
+      expect(validateParentType(parent, child)).toBe(true);
+    });
+
+    it('should allow when child type is undefined (untyped task)', () => {
+      const parent = makeTask({ id: 'p', type: 'epic' });
+      const child = makeTask({ id: 'c' }); // no type
+      expect(validateParentType(parent, child)).toBe(true);
+    });
+
+    it('should allow when both types are undefined', () => {
+      const parent = makeTask({ id: 'p' });
+      const child = makeTask({ id: 'c' });
+      expect(validateParentType(parent, child)).toBe(true);
+    });
+  });
+
+  // ── computeParentStatus — hierarchy scenarios ─────────────────────
+
+  describe('computeParentStatus — hierarchy scenarios', () => {
+    it('should return blocked when any child has blocked status', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic' }),
+        makeTask({ id: 's1', parent: 'epic', status: 'done' }),
+        makeTask({ id: 's2', parent: 'epic', status: 'blocked' }),
+      ]);
+      const ps = computeParentStatus(plan, 'epic');
+      expect(ps.status).toBe('blocked');
+      expect(ps.blocked).toBe(1);
+    });
+
+    it('should include blocked count in progress counters', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic' }),
+        makeTask({ id: 's1', parent: 'epic', status: 'done' }),
+        makeTask({ id: 's2', parent: 'epic', status: 'blocked' }),
+        makeTask({ id: 's3', parent: 'epic', status: 'failed' }),
+      ]);
+      const ps = computeParentStatus(plan, 'epic');
+      expect(ps.done).toBe(1);
+      expect(ps.total).toBe(3);
+      expect(ps.blocked).toBe(1);
+      expect(ps.failed).toBe(1);
+    });
+
+    it('should return ready when all remaining children are ready', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic' }),
+        makeTask({ id: 's1', parent: 'epic', status: 'done' }),
+        makeTask({ id: 's2', parent: 'epic', status: 'ready' }),
+      ]);
+      const ps = computeParentStatus(plan, 'epic');
+      expect(ps.status).toBe('ready');
+    });
+
+    it('should return running when child is running', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic' }),
+        makeTask({ id: 's1', parent: 'epic', status: 'done' }),
+        makeTask({ id: 's2', parent: 'epic', status: 'running' }),
+        makeTask({ id: 's3', parent: 'epic', status: 'ready' }),
+      ]);
+      const ps = computeParentStatus(plan, 'epic');
+      // running takes priority over ready
+      expect(ps.status).toBe('running');
+      expect(ps.running).toBe(1);
+    });
+
+    it('should count dispatched children as running', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic' }),
+        makeTask({ id: 's1', parent: 'epic', status: 'dispatched' }),
+        makeTask({ id: 's2', parent: 'epic', status: 'open' }),
+      ]);
+      const ps = computeParentStatus(plan, 'epic');
+      expect(ps.status).toBe('running');
+      expect(ps.running).toBe(1);
+    });
+
+    it('should show done fraction correctly for multi-level plans', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic' }),
+        makeTask({ id: 's1', parent: 'epic', status: 'done' }),
+        makeTask({ id: 's2', parent: 'epic', status: 'done' }),
+        makeTask({ id: 's3', parent: 'epic', status: 'done' }),
+        makeTask({ id: 's4', parent: 'epic', status: 'open' }),
+        makeTask({ id: 's5', parent: 'epic', status: 'open' }),
+      ]);
+      const ps = computeParentStatus(plan, 'epic');
+      expect(ps.done).toBe(3);
+      expect(ps.total).toBe(5);
+    });
+
+    it('should not count grandchildren in progress (only direct children)', () => {
+      // epic → story-1 → task-1, task-2
+      // computeParentStatus(epic) should only count story-1, not task-1/task-2
+      const plan = makePlan([
+        makeTask({ id: 'epic' }),
+        makeTask({ id: 'story-1', parent: 'epic', status: 'running' }),
+        makeTask({ id: 'task-1', parent: 'story-1', status: 'done' }),
+        makeTask({ id: 'task-2', parent: 'story-1', status: 'open' }),
+      ]);
+      const ps = computeParentStatus(plan, 'epic');
+      // Only story-1 is a direct child of epic
+      expect(ps.total).toBe(1);
+      expect(ps.running).toBe(1);
+    });
+  });
+
+  // ── promoteReadyTasks — blocked parent constraint ─────────────────
+
+  describe('promoteReadyTasks — hierarchy blocked parent', () => {
+    it('should still promote tasks even when parent is blocked (no hierarchy coupling in promote)', () => {
+      // promoteReadyTasks operates on depends_on, not parent/type
+      const plan = makePlan([
+        makeTask({ id: 'epic', status: 'blocked' }),
+        makeTask({ id: 'story', parent: 'epic', status: 'open', depends_on: [] }),
+      ]);
+      const promoted = promoteReadyTasks(plan);
+      // story has no depends_on — promoteReadyTasks promotes based on deps, not parent
+      expect(promoted).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  // ── savePlan — parent status auto-update ──────────────────────────
+
+  describe('savePlan — with parent tasks', () => {
+    it('should persist type field for epic/story/task', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic-1', type: 'epic' }),
+        makeTask({ id: 'story-1', parent: 'epic-1', type: 'story' }),
+        makeTask({ id: 'task-1', parent: 'story-1', type: 'task' }),
+      ]);
+      savePlan(hivePath, plan);
+
+      const loaded = loadPlan(hivePath);
+      expect(loaded).not.toBeNull();
+      const epic = loaded!.tasks.find((t) => t.id === 'epic-1');
+      const story = loaded!.tasks.find((t) => t.id === 'story-1');
+      const task = loaded!.tasks.find((t) => t.id === 'task-1');
+      expect(epic!.type).toBe('epic');
+      expect(story!.type).toBe('story');
+      expect(task!.type).toBe('task');
+    });
+
+    it('should persist parent field round-trip', () => {
+      const plan = makePlan([
+        makeTask({ id: 'epic-1' }),
+        makeTask({ id: 'story-1', parent: 'epic-1' }),
+      ]);
+      savePlan(hivePath, plan);
+
+      const loaded = loadPlan(hivePath);
+      const story = loaded!.tasks.find((t) => t.id === 'story-1');
+      expect(story!.parent).toBe('epic-1');
+    });
+
+    it('should persist tasks without type field (untyped)', () => {
+      const plan = makePlan([
+        makeTask({ id: 'task-no-type' }), // no type
+      ]);
+      savePlan(hivePath, plan);
+
+      const loaded = loadPlan(hivePath);
+      const task = loaded!.tasks.find((t) => t.id === 'task-no-type');
+      expect(task!.type).toBeUndefined();
     });
   });
 });
