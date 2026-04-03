@@ -23,6 +23,8 @@ import {
   computeParentStatus,
   sortByPriority,
   dispatchTask,
+  notifyEpicCompletions,
+  evaluateDefinitionOfDone,
 } from '../../src/core/plan.js';
 import type { Plan, PlanTask } from '../../src/types/plan.js';
 import type { ChatMessage } from '../../src/types/config.js';
@@ -210,14 +212,22 @@ describe('plan', () => {
       expect(ready.map((t) => t.id)).toEqual(['b', 'a', 'c']);
     });
 
-    it('should not return done, dispatched, or running tasks', () => {
+    it('should not return done or running tasks', () => {
       const plan = makePlan([
         makeTask({ id: 'a', status: 'done' }),
-        makeTask({ id: 'b', status: 'dispatched' }),
-        makeTask({ id: 'c', status: 'running' }),
+        makeTask({ id: 'b', status: 'running' }),
       ]);
       const ready = computeReadyTasks(plan);
       expect(ready).toHaveLength(0);
+    });
+
+    it('should return dispatched tasks as ready for pickup', () => {
+      const plan = makePlan([
+        makeTask({ id: 'a', status: 'dispatched' }),
+      ]);
+      const ready = computeReadyTasks(plan);
+      expect(ready).toHaveLength(1);
+      expect(ready[0].id).toBe('a');
     });
   });
 
@@ -1498,6 +1508,167 @@ describe('plan', () => {
       const loaded = loadPlan(hivePath);
       const task = loaded!.tasks.find((t) => t.id === 'task-no-type');
       expect(task!.type).toBeUndefined();
+    });
+  });
+
+  // ── notifyEpicCompletions ───────────────────────────────────────────
+
+  describe('notifyEpicCompletions', () => {
+    it('should append a STATUS message to chat when an epic is done', () => {
+      const chatPath = initChatFile(hivePath);
+      const epic = makeTask({ id: 'EP-01', type: 'epic' as TaskType, status: 'done', title: 'My Epic' });
+      const child1 = makeTask({ id: 'T-01', parent: 'EP-01', status: 'done' });
+      const child2 = makeTask({ id: 'T-02', parent: 'EP-01', status: 'done' });
+      const plan = makePlan([epic, child1, child2]);
+
+      const notified = notifyEpicCompletions(plan, chatPath);
+
+      expect(notified).toEqual(['EP-01']);
+      expect(epic.completion_notified).toBe(true);
+      const messages = readMessages(chatPath);
+      const statusMsg = messages.find((m) => m.type === 'STATUS' && m.body.includes('EP-01'));
+      expect(statusMsg).toBeDefined();
+      expect(statusMsg?.body).toContain('2/2');
+    });
+
+    it('should not notify again if already notified', () => {
+      const chatPath = initChatFile(hivePath);
+      const epic = makeTask({ id: 'EP-02', type: 'epic' as TaskType, status: 'done', completion_notified: true });
+      const child = makeTask({ id: 'T-03', parent: 'EP-02', status: 'done' });
+      const plan = makePlan([epic, child]);
+
+      const notified = notifyEpicCompletions(plan, chatPath);
+
+      expect(notified).toHaveLength(0);
+      const messages = readMessages(chatPath);
+      expect(messages.filter((m) => m.body.includes('EP-02'))).toHaveLength(0);
+    });
+
+    it('should not notify if epic is not done', () => {
+      const chatPath = initChatFile(hivePath);
+      const epic = makeTask({ id: 'EP-03', type: 'epic' as TaskType, status: 'running' });
+      const child1 = makeTask({ id: 'T-04', parent: 'EP-03', status: 'done' });
+      const child2 = makeTask({ id: 'T-05', parent: 'EP-03', status: 'running' });
+      const plan = makePlan([epic, child1, child2]);
+
+      const notified = notifyEpicCompletions(plan, chatPath);
+
+      expect(notified).toHaveLength(0);
+    });
+
+    it('should include cost in message when children have actual_cost', () => {
+      const chatPath = initChatFile(hivePath);
+      const epic = makeTask({ id: 'EP-04', type: 'epic' as TaskType, status: 'done' });
+      const child1 = makeTask({ id: 'T-06', parent: 'EP-04', status: 'done', actual_cost: 0.5 });
+      const child2 = makeTask({ id: 'T-07', parent: 'EP-04', status: 'done', actual_cost: 0.3 });
+      const plan = makePlan([epic, child1, child2]);
+
+      notifyEpicCompletions(plan, chatPath);
+
+      const messages = readMessages(chatPath);
+      const statusMsg = messages.find((m) => m.body.includes('EP-04'));
+      expect(statusMsg?.body).toContain('$0.80');
+    });
+
+    it('should not notify epics with no children', () => {
+      const chatPath = initChatFile(hivePath);
+      const epic = makeTask({ id: 'EP-05', type: 'epic' as TaskType, status: 'done' });
+      const plan = makePlan([epic]);
+
+      const notified = notifyEpicCompletions(plan, chatPath);
+      expect(notified).toHaveLength(0);
+    });
+
+    it('should not notify when extra DoD steps are not yet confirmed', () => {
+      const chatPath = initChatFile(hivePath);
+      const epic = makeTask({ id: 'EP-06', type: 'epic' as TaskType, status: 'done' });
+      const child = makeTask({ id: 'T-08', parent: 'EP-06', status: 'done' });
+      const plan = makePlan([epic, child]);
+
+      // tests_pass not recorded on epic.dod_steps_done
+      const notified = notifyEpicCompletions(plan, chatPath, ['all_tasks_done', 'tests_pass']);
+      expect(notified).toHaveLength(0);
+    });
+
+    it('should notify when all DoD steps including external ones are confirmed', () => {
+      const chatPath = initChatFile(hivePath);
+      const epic = makeTask({
+        id: 'EP-07',
+        type: 'epic' as TaskType,
+        status: 'done',
+        dod_steps_done: ['tests_pass', 'pr_created'],
+      });
+      const child = makeTask({ id: 'T-09', parent: 'EP-07', status: 'done' });
+      const plan = makePlan([epic, child]);
+
+      const notified = notifyEpicCompletions(plan, chatPath, ['all_tasks_done', 'tests_pass', 'pr_created']);
+      expect(notified).toHaveLength(1);
+      expect(notified[0]).toBe('EP-07');
+    });
+  });
+
+  // ── evaluateDefinitionOfDone ──────────────────────────────────────
+
+  describe('evaluateDefinitionOfDone', () => {
+    it('should be satisfied with all_tasks_done when all children are done', () => {
+      const epic = makeTask({ id: 'EPIC-A', type: 'epic' as TaskType, status: 'done' });
+      const child = makeTask({ id: 'T-A1', parent: 'EPIC-A', status: 'done' });
+      const plan = makePlan([epic, child]);
+
+      const result = evaluateDefinitionOfDone(epic, plan, ['all_tasks_done']);
+      expect(result.satisfied).toBe(true);
+      expect(result.pending).toHaveLength(0);
+    });
+
+    it('should be pending all_tasks_done when a child is not done', () => {
+      const epic = makeTask({ id: 'EPIC-B', type: 'epic' as TaskType, status: 'running' });
+      const child1 = makeTask({ id: 'T-B1', parent: 'EPIC-B', status: 'done' });
+      const child2 = makeTask({ id: 'T-B2', parent: 'EPIC-B', status: 'open' });
+      const plan = makePlan([epic, child1, child2]);
+
+      const result = evaluateDefinitionOfDone(epic, plan, ['all_tasks_done']);
+      expect(result.satisfied).toBe(false);
+      expect(result.pending).toContain('all_tasks_done');
+    });
+
+    it('should be pending external steps not recorded on dod_steps_done', () => {
+      const epic = makeTask({ id: 'EPIC-C', type: 'epic' as TaskType, status: 'done' });
+      const child = makeTask({ id: 'T-C1', parent: 'EPIC-C', status: 'done' });
+      const plan = makePlan([epic, child]);
+
+      const result = evaluateDefinitionOfDone(epic, plan, ['all_tasks_done', 'pr_merged']);
+      expect(result.satisfied).toBe(false);
+      expect(result.pending).toContain('pr_merged');
+    });
+
+    it('should be satisfied when all steps including external ones are confirmed', () => {
+      const epic = makeTask({
+        id: 'EPIC-D',
+        type: 'epic' as TaskType,
+        status: 'done',
+        dod_steps_done: ['tests_pass', 'pr_merged', 'released'],
+      });
+      const child = makeTask({ id: 'T-D1', parent: 'EPIC-D', status: 'done' });
+      const plan = makePlan([epic, child]);
+
+      const result = evaluateDefinitionOfDone(epic, plan, ['all_tasks_done', 'tests_pass', 'pr_merged', 'released']);
+      expect(result.satisfied).toBe(true);
+      expect(result.pending).toHaveLength(0);
+    });
+
+    it('should return only the unmet steps as pending', () => {
+      const epic = makeTask({
+        id: 'EPIC-E',
+        type: 'epic' as TaskType,
+        status: 'done',
+        dod_steps_done: ['tests_pass'],
+      });
+      const child = makeTask({ id: 'T-E1', parent: 'EPIC-E', status: 'done' });
+      const plan = makePlan([epic, child]);
+
+      const result = evaluateDefinitionOfDone(epic, plan, ['all_tasks_done', 'tests_pass', 'pr_created', 'pr_merged']);
+      expect(result.satisfied).toBe(false);
+      expect(result.pending).toEqual(['pr_created', 'pr_merged']);
     });
   });
 });

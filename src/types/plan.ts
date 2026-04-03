@@ -90,6 +90,20 @@ export interface PlanTask {
 
   /** Last error message recorded when a transient failure occurred. */
   last_error?: string;
+
+  /** Set to true after a completion chat notification has been sent for this epic. */
+  completion_notified?: boolean;
+
+  /**
+   * Tracks which definition-of-done steps have been externally confirmed for
+   * this epic (e.g. 'tests_pass', 'pr_created', 'pr_merged', 'released').
+   * The 'all_tasks_done' step is computed automatically from child statuses
+   * and does not need to be listed here.
+   */
+  dod_steps_done?: string[];
+
+  /** PR URL recorded when the pr_created or pr_merged DoD step is satisfied. */
+  pr_url?: string;
 }
 
 export interface Plan {

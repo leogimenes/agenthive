@@ -15,7 +15,7 @@ import type {
   TaskType,
   DAGValidation,
 } from '../types/plan.js';
-import type { ChatMessage } from '../types/config.js';
+import type { ChatMessage, DefinitionOfDoneStep } from '../types/config.js';
 import { appendMessage } from './chat.js';
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -633,6 +633,98 @@ export function dispatchTask(
 }
 
 export { PRIORITY_ORDER };
+
+// ── Epic completion notifications ────────────────────────────────────
+
+/**
+ * Evaluate which definition-of-done steps are satisfied for a given epic.
+ *
+ * - `all_tasks_done` is auto-computed: all direct and indirect children
+ *   must have status 'done'.
+ * - All other steps (`tests_pass`, `pr_created`, `pr_merged`, `released`)
+ *   must be recorded externally on `epic.dod_steps_done`.
+ *
+ * Returns an object with:
+ *   - `satisfied`: true if every requested step is met
+ *   - `pending`: steps that are not yet met (in order)
+ */
+export function evaluateDefinitionOfDone(
+  epic: PlanTask,
+  plan: Plan,
+  steps: DefinitionOfDoneStep[],
+): { satisfied: boolean; pending: DefinitionOfDoneStep[] } {
+  const pending: DefinitionOfDoneStep[] = [];
+
+  for (const step of steps) {
+    if (step === 'all_tasks_done') {
+      const ps = computeParentStatus(plan, epic.id);
+      if (ps.total === 0 || ps.status !== 'done') {
+        pending.push(step);
+      }
+    } else {
+      const confirmed = epic.dod_steps_done ?? [];
+      if (!confirmed.includes(step)) {
+        pending.push(step);
+      }
+    }
+  }
+
+  return { satisfied: pending.length === 0, pending };
+}
+
+/**
+ * Check all epics in the plan. For any epic that is 'done' and has not yet
+ * sent a completion notification, append a STATUS message to the chat file
+ * and mark the epic so it won't notify again.
+ *
+ * The optional `steps` parameter is the delivery.definition_of_done list.
+ * All steps must be satisfied before a notification is sent.
+ * Defaults to ['all_tasks_done'] when omitted.
+ *
+ * Returns the list of epic IDs that were newly notified so the caller knows
+ * to re-save the plan.
+ */
+export function notifyEpicCompletions(
+  plan: Plan,
+  chatFilePath: string,
+  steps: DefinitionOfDoneStep[] = ['all_tasks_done'],
+): string[] {
+  const notified: string[] = [];
+
+  for (const task of plan.tasks) {
+    if (task.type !== 'epic') continue;
+    if (task.completion_notified) continue;
+
+    const children = getChildTasks(plan, task.id);
+    if (children.length === 0) continue; // no children — skip untracked epics
+
+    // Check all DoD steps are satisfied before notifying
+    const { satisfied } = evaluateDefinitionOfDone(task, plan, steps);
+    if (!satisfied) continue;
+
+    const doneCount = children.filter((c) => c.status === 'done').length;
+    const totalCount = children.length;
+
+    // Aggregate costs
+    const actualCost = children.reduce((sum, c) => sum + (c.actual_cost ?? 0), 0);
+    const estimatedCost = children.reduce((sum, c) => sum + (c.estimated_cost ?? 0), 0);
+
+    const costStr =
+      actualCost > 0
+        ? ` Cost: $${actualCost.toFixed(2)} actual`
+        : estimatedCost > 0
+          ? ` Est. cost: $${estimatedCost.toFixed(2)}`
+          : '';
+
+    const body = `Epic [${task.id}] "${task.title}" completed. ${doneCount}/${totalCount} tasks done.${costStr}`;
+    appendMessage(chatFilePath, 'HIVE', 'STATUS', body);
+
+    task.completion_notified = true;
+    notified.push(task.id);
+  }
+
+  return notified;
+}
 
 // ── Retry policy ─────────────────────────────────────────────────────
 

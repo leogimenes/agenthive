@@ -1,6 +1,6 @@
 {
   "name": "agenthive",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Multi-agent orchestrator for Claude Code — coordination, cost control, and observability for parallel AI agents on any git repository.",
   "type": "module",
   "bin": {

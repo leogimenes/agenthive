@@ -368,6 +368,13 @@ function buildConfig(
       coordination: ['check-chat'],
     },
     templates: {},
+    delivery: {
+      strategy: 'manual',
+      require_ci: true,
+      base_branch: 'main',
+      auto_release: false,
+      definition_of_done: ['all_tasks_done'],
+    },
   };
 }
 
@@ -426,6 +433,13 @@ function buildConfigFromProfile(
       custom: toStringArray(rawHooks.custom),
     },
     templates: {},
+    delivery: {
+      strategy: 'manual',
+      require_ci: true,
+      base_branch: 'main',
+      auto_release: false,
+      definition_of_done: ['all_tasks_done'],
+    },
   };
 }
 

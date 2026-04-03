@@ -20,6 +20,8 @@ import { registerAddCommand, registerRemoveCommand } from './commands/agent.js';
 import { registerLogsCommand } from './commands/logs.js';
 import { registerCostCommand } from './commands/cost.js';
 import { registerResumeCommand } from './commands/resume.js';
+import { registerDeliverCommand } from './commands/deliver.js';
+import { registerReleaseCommand } from './commands/release.js';
 
 // Read version from package.json at dev/install time, fall back for
 // standalone binaries where the filesystem layout doesn't exist.
@@ -64,6 +66,8 @@ registerRemoveCommand(program);
 registerLogsCommand(program);
 registerCostCommand(program);
 registerResumeCommand(program);
+registerDeliverCommand(program);
+registerReleaseCommand(program);
 
 // Catch Ctrl+C during interactive prompts — show clean message, no stack trace.
 function handlePromptExit(err: unknown): void {

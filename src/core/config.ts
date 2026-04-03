@@ -9,6 +9,8 @@ import type {
   ChatConfig,
   HooksConfig,
   TemplatesConfig,
+  DeliveryConfig,
+  DefinitionOfDoneStep,
 } from '../types/config.js';
 
 // ── Errors ──────────────────────────────────────────────────────────
@@ -33,6 +35,14 @@ export class HiveConfigValidationError extends Error {
 
 const HIVE_DIR = '.hive';
 const CONFIG_FILE = 'config.yaml';
+
+export const VALID_DOD_STEPS: readonly DefinitionOfDoneStep[] = [
+  'all_tasks_done',
+  'tests_pass',
+  'pr_created',
+  'pr_merged',
+  'released',
+] as const;
 
 const DEFAULT_DEFAULTS: DefaultsConfig = {
   poll: 60,
@@ -194,7 +204,53 @@ function validateAndNormalize(
       typeof rawTemplates.dir === 'string' ? rawTemplates.dir : undefined,
   };
 
-  return { session, defaults, agents, chat, hooks, templates };
+  // Delivery
+  const rawDelivery = (raw.delivery ?? {}) as Record<string, unknown>;
+  const strategy = rawDelivery.strategy;
+  const validStrategies = ['auto-merge', 'pull-request', 'manual'] as const;
+  if (
+    strategy !== undefined &&
+    !validStrategies.includes(strategy as (typeof validStrategies)[number])
+  ) {
+    throw new HiveConfigValidationError(
+      `delivery.strategy must be one of: ${validStrategies.join(', ')}.`,
+    );
+  }
+  const rawDodArray = toStringArray(rawDelivery.definition_of_done);
+  let definitionOfDone: DefinitionOfDoneStep[];
+  if (rawDodArray === undefined) {
+    definitionOfDone = ['all_tasks_done'];
+  } else {
+    for (const step of rawDodArray) {
+      if (!VALID_DOD_STEPS.includes(step as DefinitionOfDoneStep)) {
+        throw new HiveConfigValidationError(
+          `delivery.definition_of_done contains unknown step "${step}". Valid steps: ${VALID_DOD_STEPS.join(', ')}.`,
+        );
+      }
+    }
+    definitionOfDone = rawDodArray as DefinitionOfDoneStep[];
+  }
+
+  const delivery: DeliveryConfig = {
+    strategy: validStrategies.includes(strategy as (typeof validStrategies)[number])
+      ? (strategy as DeliveryConfig['strategy'])
+      : 'manual',
+    require_ci:
+      typeof rawDelivery.require_ci === 'boolean'
+        ? rawDelivery.require_ci
+        : true,
+    base_branch:
+      typeof rawDelivery.base_branch === 'string'
+        ? rawDelivery.base_branch
+        : 'main',
+    auto_release:
+      typeof rawDelivery.auto_release === 'boolean'
+        ? rawDelivery.auto_release
+        : false,
+    definition_of_done: definitionOfDone,
+  };
+
+  return { session, defaults, agents, chat, hooks, templates, delivery };
 }
 
 // ── Resolution ──────────────────────────────────────────────────────
