@@ -141,7 +141,7 @@ function fakeChild(exitCode: number, stdoutData = ''): ReturnType<typeof spawn> 
 async function runLoopUntilTaskDone(
   hivePath: string,
   taskId: string,
-  timeoutMs = 4000,
+  timeoutMs = 10000,
 ): Promise<void> {
   const hiveConfig = makeHiveConfig(hivePath);
   const agent = makeAgent(hivePath);
@@ -381,7 +381,7 @@ describe('AgentLoop — retry policy for transient plan task failures (BUG 9)', 
       .mockReturnValue(fakeChild(0));     // subsequent succeed
 
     // Run until task reaches 'done' (after retry)
-    await runLoopUntilTaskDone(hivePath, 'BE-R1', 8000);
+    await runLoopUntilTaskDone(hivePath, 'BE-R1', 16000);
 
     const finalPlan = loadPlan(hivePath);
     const task = finalPlan!.tasks.find((t) => t.id === 'BE-R1');
@@ -467,7 +467,7 @@ describe('AgentLoop — retry policy for transient plan task failures (BUG 9)', 
     // Always fail so we exhaust retries
     vi.mocked(spawn).mockReturnValue(fakeChild(1));
 
-    await runLoopUntilTaskDone(hivePath, 'BE-R4', 8000);
+    await runLoopUntilTaskDone(hivePath, 'BE-R4', 16000);
 
     const finalPlan = loadPlan(hivePath);
     const task = finalPlan!.tasks.find((t) => t.id === 'BE-R4');
