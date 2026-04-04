@@ -3,6 +3,9 @@ dist/
 bin/
 .hive/worktrees/
 .hive/state/
+.hive/chat.md
+.hive/plan.json
+.claude/worktrees/
 *.tgz
 coverage/
 .env
