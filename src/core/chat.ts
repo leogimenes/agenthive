@@ -37,6 +37,8 @@ const CHAT_HEADER = `# HIVE — Inter-Agent Coordination Log
 
 // New format: [ROLE] TYPE <2026-03-02T12:34:56.789Z>: body
 const MESSAGE_REGEX_TS = /^\[([A-Z_]+)\]\s+(STATUS|DONE|REQUEST|QUESTION|BLOCKER|ACK|WARN)\s+<(\d{4}-\d{2}-\d{2}T[^>]+)>:\s*(.+)$/;
+// Bare timestamp format (no angle brackets): [ROLE] TYPE 2026-03-02T12:34:56.789Z: body
+const MESSAGE_REGEX_BARE_TS = /^\[([A-Z_]+)\]\s+(STATUS|DONE|REQUEST|QUESTION|BLOCKER|ACK|WARN)\s+(\d{4}-\d{2}-\d{2}T[\d:.]+Z?):\s*(.+)$/;
 // Legacy format (no timestamp): [ROLE] TYPE: body
 const MESSAGE_REGEX = /^\[([A-Z_]+)\]\s+(STATUS|DONE|REQUEST|QUESTION|BLOCKER|ACK|WARN):\s*(.+)$/;
 
@@ -162,6 +164,19 @@ function parseMessages(content: string, lineOffset = 0): ChatMessage[] {
         body: tsMatch[4],
         lineNumber: lineOffset + i + 1,
         timestamp: tsMatch[3],
+      });
+      continue;
+    }
+
+    // Try bare timestamp format (no angle brackets)
+    const bareMatch = line.match(MESSAGE_REGEX_BARE_TS);
+    if (bareMatch) {
+      messages.push({
+        role: bareMatch[1],
+        type: bareMatch[2] as MessageType,
+        body: bareMatch[4],
+        lineNumber: lineOffset + i + 1,
+        timestamp: bareMatch[3],
       });
       continue;
     }

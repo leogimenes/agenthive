@@ -151,7 +151,7 @@ export function computeReadyTasks(plan: Plan): PlanTask[] {
   return plan.tasks
     .filter(
       (t) =>
-        (t.status === 'open' || t.status === 'ready') &&
+        (t.status === 'open' || t.status === 'ready' || t.status === 'dispatched') &&
         t.depends_on.every((dep) => doneIds.has(dep)),
     )
     .sort((a, b) => {
