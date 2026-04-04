@@ -17,6 +17,7 @@ coverage/
 
 .beads/
 .ralph-tui/
+.claude/worktrees/
 
 docs/
 tasks/
