@@ -146,6 +146,44 @@ Quick start:
   plan
     .command('import <file>')
     .description('Import tasks from a YAML or Markdown file')
+    .addHelpText('after', `
+Example YAML (flat):
+
+  tasks:
+    - id: BE-01
+      title: Add user authentication
+      target: backend
+      priority: p0
+      description: Implement JWT-based auth
+    - id: BE-02
+      title: Add rate limiting
+      target: backend
+      priority: p1
+      depends_on: [BE-01]
+
+Example YAML (nested epics > stories > tasks):
+
+  epics:
+    - id: EP-01
+      title: User management
+      target: backend
+      stories:
+        - id: US-01
+          title: Registration flow
+          tasks:
+            - id: BE-01
+              title: Add signup endpoint
+              priority: p0
+            - id: FE-01
+              title: Build signup form
+              target: frontend
+              depends_on: [BE-01]
+
+Example Markdown:
+
+  ## BE-01: Add user authentication (p0) @backend
+  ## BE-02: Add rate limiting (p1) @backend [depends: BE-01]
+`)
     .action(async (file: string, _opts) => {
       const cwd = program.opts().cwd
         ? resolve(program.opts().cwd)
