@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, chmodSync } from 'node:fs';
 import { join, resolve, basename } from 'node:path';
 import { checkbox, confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
@@ -251,8 +251,9 @@ async function installTemplates(
   mkdirSync(agentsDir, { recursive: true });
 
   const installed: string[] = [];
-  const skipped: string[] = [];
+  const existing: string[] = [];
 
+  // First pass: install new templates, collect existing ones
   for (const agentName of selectedAgents) {
     const agentConfig = config.agents[agentName];
     const templateName = agentConfig?.agent ?? AVAILABLE_AGENTS[agentName]?.agent ?? agentName;
@@ -265,7 +266,7 @@ async function installTemplates(
     const destPath = join(agentsDir, `${templateName}.md`);
 
     if (existsSync(destPath)) {
-      skipped.push(templateName);
+      existing.push(templateName);
       continue;
     }
 
@@ -276,10 +277,45 @@ async function installTemplates(
     );
   }
 
-  for (const name of skipped) {
-    console.log(
-      `  ${chalk.yellow('⚠')} ${chalk.bold(name)} — .claude/agents/${name}.md already exists, skipped`,
-    );
+  // Second pass: prompt to replace existing templates
+  if (existing.length > 0) {
+    for (const name of existing) {
+      console.log(
+        `  ${chalk.yellow('⚠')} ${chalk.bold(name)} — .claude/agents/${name}.md already exists`,
+      );
+    }
+
+    const shouldReplace = opts.yes
+      ? false // --yes mode keeps existing definitions by default
+      : await confirm({
+          message: `Replace ${existing.length} existing agent definition(s)? (originals backed up to .bak)`,
+          default: false,
+        });
+
+    if (shouldReplace) {
+      for (const name of existing) {
+        const agentConfig = config.agents[name];
+        const templateName = agentConfig?.agent ?? AVAILABLE_AGENTS[name]?.agent ?? name;
+        const template = EMBEDDED_TEMPLATES[templateName];
+        if (!template) continue;
+
+        const destPath = join(agentsDir, `${templateName}.md`);
+        const backupPath = join(agentsDir, `${templateName}.md.bak`);
+
+        copyFileSync(destPath, backupPath);
+        writeFileSync(destPath, template, 'utf-8');
+        installed.push(templateName);
+        console.log(
+          `  ${chalk.green('✓')} ${chalk.bold(templateName)} — replaced (backup: ${templateName}.md.bak)`,
+        );
+      }
+    } else {
+      for (const name of existing) {
+        console.log(
+          `  ${chalk.gray('—')} ${chalk.bold(name)} — kept existing`,
+        );
+      }
+    }
   }
 
   return installed;
