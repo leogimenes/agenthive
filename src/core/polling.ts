@@ -4,6 +4,7 @@ import { acquireLock, releaseLock, getCheckpoint, setCheckpoint, updateHeartbeat
 import { checkDailyBudget, recordSpending, logTaskCost } from './budget.js';
 import { findRequests, appendMessage, getChatLineCount, resolveChatPath, readMessagesSince } from './chat.js';
 import { syncWorktree, rebaseAndPush } from './worktree.js';
+import { acquireGitLock, releaseGitLock } from './gitlock.js';
 import { loadPlan, savePlan, reconcilePlanWithChat, computeReadyTasks, promoteReadyTasks, resetTaskForRetry, DEFAULT_MAX_RETRIES, notifyEpicCompletions } from './plan.js';
 import { notify } from './notify.js';
 import { rotateTranscripts } from './transcripts.js';
@@ -15,6 +16,11 @@ const MAX_CONSECUTIVE_FAILS = 3;
 const BACKOFF_BASE_MS = 5 * 60 * 1000;   // 5 minutes
 const BACKOFF_MAX_MS = 30 * 60 * 1000;   // 30 minutes
 const BUDGET_EXHAUST_SLEEP_MS = 60 * 60 * 1000; // 1 hour
+
+// Git sync circuit breaker
+const GIT_SYNC_MAX_FAILURES = 3;
+const GIT_SYNC_BACKOFF_BASE_MS = 2 * 60 * 1000;   // 2 minutes
+const GIT_SYNC_BACKOFF_MAX_MS = 15 * 60 * 1000;    // 15 minutes
 
 // ── AgentLoop ───────────────────────────────────────────────────────
 
@@ -33,6 +39,11 @@ export class AgentLoop {
   private consecutiveIdle = 0;
   private notificationsEnabled: boolean;
   private notifyOn: Set<string>;
+
+  // Git sync circuit breaker state
+  private gitSyncFailures = 0;
+  private gitSyncCircuitOpen = false;
+  private gitSyncBackoffUntil?: number;
 
   constructor(
     agent: ResolvedAgentConfig,
@@ -182,17 +193,26 @@ export class AgentLoop {
         setCheckpoint(this.hivePath, this.agent.name, currentLines);
 
         // Rebase and push after successful task
-        const pushResult = await rebaseAndPush(this.agent.worktreePath);
-        if (!pushResult.success) {
-          this.log(`WARN: push failed after task: ${truncate(pushResult.error ?? '', 120)}`);
-          if (pushResult.conflictFiles?.length) {
-            appendMessage(
-              this.chatFilePath,
-              this.agent.chatRole,
-              'BLOCKER',
-              `Rebase conflict on ${pushResult.conflictFiles.join(', ')}. Manual resolution needed.`,
-            );
+        const pushLocked = await acquireGitLock(this.hivePath, this.agent.name, 'push', 10000);
+        if (pushLocked) {
+          try {
+            const pushResult = await rebaseAndPush(this.agent.worktreePath);
+            if (!pushResult.success) {
+              this.log(`WARN: push failed after task: ${truncate(pushResult.error ?? '', 120)}`);
+              if (pushResult.conflictFiles?.length) {
+                appendMessage(
+                  this.chatFilePath,
+                  this.agent.chatRole,
+                  'BLOCKER',
+                  `Rebase conflict on ${pushResult.conflictFiles.join(', ')}. Manual resolution needed.`,
+                );
+              }
+            }
+          } finally {
+            releaseGitLock(this.hivePath, this.agent.name);
           }
+        } else {
+          this.log('WARN: could not acquire git lock for push — will retry next cycle');
         }
 
         await sleep(5000); // Brief pause before next check
@@ -287,9 +307,18 @@ export class AgentLoop {
             this.log(`Epic completions notified: ${epicsDoneInline.join(', ')}`);
           }
 
-          const pushResult = await rebaseAndPush(this.agent.worktreePath);
-          if (!pushResult.success) {
-            this.log(`WARN: push failed after task: ${truncate(pushResult.error ?? '', 120)}`);
+          const planPushLocked = await acquireGitLock(this.hivePath, this.agent.name, 'push', 10000);
+          if (planPushLocked) {
+            try {
+              const pushResult = await rebaseAndPush(this.agent.worktreePath);
+              if (!pushResult.success) {
+                this.log(`WARN: push failed after task: ${truncate(pushResult.error ?? '', 120)}`);
+              }
+            } finally {
+              releaseGitLock(this.hivePath, this.agent.name);
+            }
+          } else {
+            this.log('WARN: could not acquire git lock for push — will retry next cycle');
           }
 
           await sleep(5000);
@@ -329,9 +358,21 @@ export class AgentLoop {
     this.consecutiveFails = 0;
 
     // Sync worktree during idle so it's ready for next task
-    const syncResult = await syncWorktree(this.agent.worktreePath);
-    if (!syncResult.success) {
-      this.log(`WARN: idle git sync failed: ${truncate(syncResult.error ?? '', 120)}`);
+    if (!this.isGitSyncCircuitOpen()) {
+      const locked = await acquireGitLock(this.hivePath, this.agent.name, 'sync', 0);
+      if (locked) {
+        try {
+          const syncResult = await syncWorktree(this.agent.worktreePath);
+          if (syncResult.success) {
+            this.resetGitSyncCircuit();
+          } else {
+            this.log(`WARN: idle git sync failed: ${truncate(syncResult.error ?? '', 120)}`);
+            this.recordGitSyncFailure(syncResult.error);
+          }
+        } finally {
+          releaseGitLock(this.hivePath, this.agent.name);
+        }
+      }
     }
 
     if (this.consecutiveIdle % 10 === 0) {
@@ -350,15 +391,37 @@ export class AgentLoop {
    * BUG 3 fix: dirty worktrees should not block autonomous development.
    *
    * Recovery strategy:
-   * 1. Try normal sync (fetch + rebase)
+   * 1. Try normal sync (fetch + rebase) with smart strategies
    * 2. If that fails, stash changes and retry
    * 3. If still failing, commit WIP changes and retry
    * 4. If all else fails, log warning and continue (agent can still work)
    */
   private async syncWorktreeWithRecovery(): Promise<void> {
-    // First attempt: normal sync
+    if (this.isGitSyncCircuitOpen()) {
+      this.log('Git sync circuit breaker is open — skipping pre-task sync');
+      return;
+    }
+
+    const locked = await acquireGitLock(this.hivePath, this.agent.name, 'sync', 5000);
+    if (!locked) {
+      this.log('WARN: could not acquire git lock for pre-task sync — skipping');
+      return;
+    }
+
+    try {
+      await this.syncWorktreeWithRecoveryInner();
+    } finally {
+      releaseGitLock(this.hivePath, this.agent.name);
+    }
+  }
+
+  private async syncWorktreeWithRecoveryInner(): Promise<void> {
+    // First attempt: normal sync (now uses smart strategies internally)
     const result = await syncWorktree(this.agent.worktreePath);
-    if (result.success) return;
+    if (result.success) {
+      this.resetGitSyncCircuit();
+      return;
+    }
 
     this.log(`WARN: git sync failed, attempting recovery: ${truncate(result.error ?? '', 120)}`);
 
@@ -392,7 +455,10 @@ export class AgentLoop {
           this.log('WARN: could not pop stash — changes saved in git stash list');
         }
 
-        if (retryResult.success) return;
+        if (retryResult.success) {
+          this.resetGitSyncCircuit();
+          return;
+        }
       }
 
       // Third attempt: commit WIP and sync
@@ -408,7 +474,10 @@ export class AgentLoop {
         this.log('Auto-committed WIP changes for sync');
 
         const retryResult = await syncWorktree(this.agent.worktreePath);
-        if (retryResult.success) return;
+        if (retryResult.success) {
+          this.resetGitSyncCircuit();
+          return;
+        }
         this.log(`WARN: sync still failing after WIP commit: ${truncate(retryResult.error ?? '', 120)}`);
       }
     } catch (err: unknown) {
@@ -418,6 +487,59 @@ export class AgentLoop {
 
     // Continue anyway — the agent can still work on its current branch state
     this.log('Continuing with current worktree state despite sync failure');
+    this.recordGitSyncFailure(result.error);
+  }
+
+  // ── Git sync circuit breaker ───────────────────────────────────
+
+  private isGitSyncCircuitOpen(): boolean {
+    if (!this.gitSyncCircuitOpen) return false;
+    // Auto-reset after backoff expires
+    if (this.gitSyncBackoffUntil && Date.now() > this.gitSyncBackoffUntil) {
+      this.gitSyncCircuitOpen = false;
+      this.gitSyncFailures = 0;
+      this.gitSyncBackoffUntil = undefined;
+      this.log('Git sync circuit breaker reset — will attempt sync again');
+      return false;
+    }
+    return true;
+  }
+
+  private recordGitSyncFailure(error?: string): void {
+    this.gitSyncFailures++;
+    if (this.gitSyncFailures >= GIT_SYNC_MAX_FAILURES && !this.gitSyncCircuitOpen) {
+      this.gitSyncCircuitOpen = true;
+      const power = this.gitSyncFailures - GIT_SYNC_MAX_FAILURES;
+      const backoff = Math.min(
+        GIT_SYNC_BACKOFF_BASE_MS * Math.pow(2, power),
+        GIT_SYNC_BACKOFF_MAX_MS,
+      );
+      this.gitSyncBackoffUntil = Date.now() + backoff;
+
+      appendMessage(
+        this.chatFilePath,
+        this.agent.chatRole,
+        'BLOCKER',
+        `Git sync failing repeatedly (${this.gitSyncFailures} failures). ` +
+        `Circuit breaker open for ${Math.round(backoff / 1000)}s. ` +
+        `Last error: ${truncate(error ?? 'unknown', 200)}`,
+      );
+
+      this.sendNotify(
+        `${this.agent.name}: Git sync circuit breaker`,
+        `${this.gitSyncFailures} consecutive sync failures`,
+        'critical',
+      );
+    }
+  }
+
+  private resetGitSyncCircuit(): void {
+    if (this.gitSyncFailures > 0) {
+      this.log(`Git sync recovered after ${this.gitSyncFailures} failure(s)`);
+    }
+    this.gitSyncFailures = 0;
+    this.gitSyncCircuitOpen = false;
+    this.gitSyncBackoffUntil = undefined;
   }
 
   // ── Task execution ──────────────────────────────────────────────

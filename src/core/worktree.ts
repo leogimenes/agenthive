@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync, mkdirSync, symlinkSync, readlinkSync, lstatSync, rmSync, unlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { WorktreeInfo, RebaseResult } from '../types/config.js';
+import type { WorktreeInfo, RebaseResult, SyncResult, SyncDiagnosis } from '../types/config.js';
 
 const exec = promisify(execFile);
 
@@ -120,91 +120,221 @@ export async function removeWorktree(
 // ── Sync operations ─────────────────────────────────────────────────
 
 /**
- * Fetch latest from remote and rebase the worktree's branch onto target.
- * Used before dispatching a task to ensure the agent starts from latest code.
+ * Diagnose why a rebase failed by inspecting branch divergence.
+ * Must be called AFTER aborting any in-progress rebase.
  */
-export async function syncWorktree(
+export async function diagnoseSyncFailure(
   worktreePath: string,
-  targetBranch = 'main',
-): Promise<{ success: boolean; error?: string }> {
+  targetBranch: string,
+): Promise<SyncDiagnosis> {
+  const target = `origin/${targetBranch}`;
   try {
-    await exec('git', ['fetch', 'origin'], { cwd: worktreePath });
-    await exec('git', ['rebase', `origin/${targetBranch}`], {
-      cwd: worktreePath,
-    });
-    return { success: true };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
+    // Count commits ahead/behind
+    const { stdout: aheadOut } = await exec(
+      'git', ['log', '--oneline', `${target}..HEAD`],
+      { cwd: worktreePath },
+    );
+    const { stdout: behindOut } = await exec(
+      'git', ['log', '--oneline', `HEAD..${target}`],
+      { cwd: worktreePath },
+    );
+    const aheadCount = aheadOut.trim() ? aheadOut.trim().split('\n').length : 0;
+    const behindCount = behindOut.trim() ? behindOut.trim().split('\n').length : 0;
 
-    // Abort the rebase if it failed
-    try {
-      await exec('git', ['rebase', '--abort'], { cwd: worktreePath });
-    } catch {
-      // May not be in a rebase state
+    if (aheadCount === 0 && behindCount === 0) {
+      return { type: 'clean' };
     }
 
-    return { success: false, error: message };
+    if (aheadCount === 0) {
+      return { type: 'branch_diverged', aheadCount: 0, behindCount };
+    }
+
+    // Use `git cherry` to detect already-applied commits
+    // Lines starting with `-` are already in upstream, `+` are unique
+    const { stdout: cherryOut } = await exec(
+      'git', ['cherry', target, 'HEAD'],
+      { cwd: worktreePath },
+    );
+    const lines = cherryOut.trim().split('\n').filter(Boolean);
+    const duplicateCount = lines.filter((l) => l.startsWith('-')).length;
+    const uniqueCount = lines.filter((l) => l.startsWith('+')).length;
+
+    if (duplicateCount > 0) {
+      return { type: 'cherry_pick_duplicates', duplicateCount, uniqueCount };
+    }
+
+    if (aheadCount > 0 && behindCount > 0) {
+      return { type: 'branch_diverged', aheadCount, behindCount };
+    }
+
+    return { type: 'clean' };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { type: 'unknown', error: msg };
   }
 }
 
 /**
+ * Abort any in-progress rebase. Silently succeeds if not rebasing.
+ */
+async function abortRebase(worktreePath: string): Promise<void> {
+  try {
+    await exec('git', ['rebase', '--abort'], { cwd: worktreePath });
+  } catch {
+    // May not be in a rebase state
+  }
+}
+
+/**
+ * Fetch latest from remote and sync the worktree's branch onto target.
+ * Uses cascading strategies to handle cherry-pick duplicates and divergence.
+ *
+ * Strategies (tried in order):
+ * 1. Standard rebase
+ * 2. Rebase with --reapply-cherry-picks (git 2.37+)
+ * 3. Diagnose and apply targeted fix:
+ *    - Cherry-pick duplicates → reset + cherry-pick unique commits
+ *    - No unique commits → reset to target
+ *    - Real conflict → return failure with diagnosis
+ */
+export async function syncWorktree(
+  worktreePath: string,
+  targetBranch = 'main',
+): Promise<SyncResult> {
+  const target = `origin/${targetBranch}`;
+
+  try {
+    await exec('git', ['fetch', 'origin'], { cwd: worktreePath });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: msg };
+  }
+
+  // Strategy 1: Standard rebase
+  try {
+    await exec('git', ['rebase', target], { cwd: worktreePath });
+    return { success: true, strategy: 'rebase' };
+  } catch {
+    await abortRebase(worktreePath);
+  }
+
+  // Strategy 2: Rebase with --reapply-cherry-picks (handles duplicate commits)
+  try {
+    await exec('git', ['rebase', '--reapply-cherry-picks', target], { cwd: worktreePath });
+    return { success: true, strategy: 'rebase-reapply' };
+  } catch {
+    await abortRebase(worktreePath);
+  }
+
+  // Strategy 3: Diagnose and apply targeted fix
+  const diagnosis = await diagnoseSyncFailure(worktreePath, targetBranch);
+
+  if (diagnosis.type === 'cherry_pick_duplicates' || diagnosis.type === 'branch_diverged') {
+    if (diagnosis.type === 'cherry_pick_duplicates' && diagnosis.uniqueCount === 0) {
+      // All commits already in upstream — safe to reset
+      try {
+        await exec('git', ['reset', '--hard', target], { cwd: worktreePath });
+        return { success: true, strategy: 'reset-to-target', diagnosis };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { success: false, error: msg, diagnosis };
+      }
+    }
+
+    if (diagnosis.type === 'branch_diverged' && diagnosis.aheadCount === 0) {
+      // Behind only — fast-forward via reset
+      try {
+        await exec('git', ['reset', '--hard', target], { cwd: worktreePath });
+        return { success: true, strategy: 'reset-to-target', diagnosis };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { success: false, error: msg, diagnosis };
+      }
+    }
+
+    // Has unique commits mixed with duplicates — cherry-pick only unique ones
+    if (diagnosis.type === 'cherry_pick_duplicates' && diagnosis.uniqueCount > 0) {
+      try {
+        // Get the unique commit SHAs (lines starting with '+' from git cherry)
+        const { stdout: cherryOut } = await exec(
+          'git', ['cherry', target, 'HEAD'],
+          { cwd: worktreePath },
+        );
+        const uniqueShas = cherryOut.trim().split('\n')
+          .filter((l) => l.startsWith('+ '))
+          .map((l) => l.slice(2));
+
+        // Reset to target, then cherry-pick unique commits
+        await exec('git', ['reset', '--hard', target], { cwd: worktreePath });
+        for (const sha of uniqueShas) {
+          await exec('git', ['cherry-pick', sha], { cwd: worktreePath });
+        }
+        return { success: true, strategy: 'cherry-pick-unique', diagnosis };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await abortRebase(worktreePath);
+        // Also abort cherry-pick if in progress
+        try {
+          await exec('git', ['cherry-pick', '--abort'], { cwd: worktreePath });
+        } catch { /* not cherry-picking */ }
+        return { success: false, error: msg, diagnosis };
+      }
+    }
+  }
+
+  // All strategies exhausted
+  return {
+    success: false,
+    error: `All sync strategies failed. Diagnosis: ${diagnosis.type}`,
+    diagnosis,
+  };
+}
+
+/**
  * After task completion: rebase onto target branch and push.
- * Returns success or conflict details.
+ * Uses smart sync strategies and retries push once on race.
  */
 export async function rebaseAndPush(
   worktreePath: string,
   targetBranch = 'main',
 ): Promise<RebaseResult> {
-  try {
-    // Fetch latest
-    await exec('git', ['fetch', 'origin'], { cwd: worktreePath });
+  // Sync first using smart strategies
+  const syncResult = await syncWorktree(worktreePath, targetBranch);
+  if (!syncResult.success) {
+    // Try to identify conflict files from diagnosis
+    const conflictFiles = syncResult.diagnosis?.type === 'merge_conflict'
+      ? syncResult.diagnosis.conflictFiles
+      : undefined;
+    return { success: false, conflictFiles, error: syncResult.error };
+  }
 
-    // Rebase onto target
-    await exec('git', ['rebase', `origin/${targetBranch}`], {
-      cwd: worktreePath,
-    });
-
-    // Push to target branch
-    const { stdout: currentBranch } = await exec(
-      'git',
-      ['rev-parse', '--abbrev-ref', 'HEAD'],
-      { cwd: worktreePath },
-    );
-
-    await exec(
-      'git',
-      ['push', 'origin', `${currentBranch.trim()}:${targetBranch}`],
-      { cwd: worktreePath },
-    );
-
-    return { success: true };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-
-    // Try to identify conflict files
-    let conflictFiles: string[] | undefined;
+  // Push with single retry on race
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const { stdout } = await exec(
-        'git',
-        ['diff', '--name-only', '--diff-filter=U'],
+      const { stdout: currentBranch } = await exec(
+        'git', ['rev-parse', '--abbrev-ref', 'HEAD'],
         { cwd: worktreePath },
       );
-      conflictFiles = stdout
-        .split('\n')
-        .filter((f) => f.trim().length > 0);
-    } catch {
-      // Can't get conflict files
+      await exec(
+        'git', ['push', 'origin', `${currentBranch.trim()}:${targetBranch}`],
+        { cwd: worktreePath },
+      );
+      return { success: true };
+    } catch (err: unknown) {
+      if (attempt === 0) {
+        // First push failed — re-sync and retry
+        const retrySync = await syncWorktree(worktreePath, targetBranch);
+        if (!retrySync.success) {
+          return { success: false, error: retrySync.error };
+        }
+        continue;
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, error: message };
     }
-
-    // Abort the rebase
-    try {
-      await exec('git', ['rebase', '--abort'], { cwd: worktreePath });
-    } catch {
-      // May not be in a rebase state
-    }
-
-    return { success: false, conflictFiles, error: message };
   }
+
+  return { success: false, error: 'Push failed after retry' };
 }
 
 // ── Agent file syncing ──────────────────────────────────────────────

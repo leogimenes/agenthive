@@ -202,6 +202,26 @@ export interface RebaseResult {
   error?: string;
 }
 
+// ── Sync diagnostics ─────────────────────────────────────────────────
+
+/** Diagnosis of why a git sync (rebase) failed. */
+export type SyncDiagnosis =
+  | { type: 'cherry_pick_duplicates'; duplicateCount: number; uniqueCount: number }
+  | { type: 'branch_diverged'; aheadCount: number; behindCount: number }
+  | { type: 'merge_conflict'; conflictFiles: string[] }
+  | { type: 'clean' }
+  | { type: 'unknown'; error: string };
+
+/** Result of a worktree sync operation with strategy details. */
+export interface SyncResult {
+  success: boolean;
+  error?: string;
+  /** Which sync strategy succeeded (if any). */
+  strategy?: 'rebase' | 'rebase-reapply' | 'cherry-pick-unique' | 'reset-to-target';
+  /** Diagnosis details when sync fails. */
+  diagnosis?: SyncDiagnosis;
+}
+
 /** Agent runtime state for status display. */
 export interface AgentStatus {
   name: string;

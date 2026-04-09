@@ -32,6 +32,11 @@ vi.mock('../../src/core/notify.js', () => ({
   notify: vi.fn(),
 }));
 
+vi.mock('../../src/core/gitlock.js', () => ({
+  acquireGitLock: vi.fn().mockResolvedValue(true),
+  releaseGitLock: vi.fn(),
+}));
+
 // ── Imports (after mocks) ─────────────────────────────────────────────
 
 import { spawn } from 'node:child_process';
