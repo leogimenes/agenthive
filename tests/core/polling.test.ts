@@ -18,8 +18,8 @@ vi.mock('node:child_process', () => ({
 }));
 
 vi.mock('../../src/core/worktree.js', () => ({
-  syncWorktree: vi.fn(),
-  rebaseAndPush: vi.fn(),
+  syncWorktree: vi.fn().mockResolvedValue({ success: true }),
+  rebaseAndPush: vi.fn().mockResolvedValue({ success: true }),
 }));
 
 vi.mock('../../src/core/budget.js', () => ({
@@ -35,6 +35,10 @@ vi.mock('../../src/core/notify.js', () => ({
 vi.mock('../../src/core/gitlock.js', () => ({
   acquireGitLock: vi.fn().mockResolvedValue(true),
   releaseGitLock: vi.fn(),
+}));
+
+vi.mock('../../src/core/transcripts.js', () => ({
+  rotateTranscripts: vi.fn().mockReturnValue({ deleted: 0 }),
 }));
 
 // ── Imports (after mocks) ─────────────────────────────────────────────
@@ -66,6 +70,11 @@ function makeHiveConfig(hivePath: string, chatFile = 'chat.md'): HiveConfig {
     chat: { file: chatFile, role_map: { backend: 'BACKEND' } },
     hooks: { safety: [], coordination: [] },
     templates: {},
+    delivery: {
+      strategy: 'manual',
+      base_branch: 'main',
+      definition_of_done: { require_tests: false, require_review: false },
+    },
   } as unknown as HiveConfig;
 }
 
