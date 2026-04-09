@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { Box, Text, useApp, useInput, useStdout } from 'ink';
 import type { Panel } from './keybindings.js';
+import { HELP_TABS } from './keybindings.js';
 import { useAgentStatus } from './hooks/useAgentStatus.js';
 import { useChatMessages } from './hooks/useChatMessages.js';
 import { usePlanData } from './hooks/usePlanData.js';
@@ -38,6 +39,7 @@ export function App({ cwd }: AppProps): React.ReactElement {
   // Panel state
   const [activePanel, setActivePanel] = useState<Panel>('status');
   const [showHelp, setShowHelp] = useState(false);
+  const [helpTab, setHelpTab] = useState(0);
   const [showDetail, setShowDetail] = useState(false);
 
   // Status panel state
@@ -190,10 +192,19 @@ export function App({ cwd }: AppProps): React.ReactElement {
       return;
     }
 
-    // Close help
+    // Help overlay navigation
     if (showHelp) {
       if (input === '?' || key.escape) {
         setShowHelp(false);
+        return;
+      }
+      if (input === 'h' || input === '[') {
+        setHelpTab((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (input === 'l' || input === ']') {
+        setHelpTab((prev) => Math.min(prev + 1, HELP_TABS.length - 1));
+        return;
       }
       return;
     }
@@ -594,7 +605,7 @@ export function App({ cwd }: AppProps): React.ReactElement {
     return (
       <Box flexDirection="column" height={termHeight}>
         <Header status={status} planStats={planData.stats.total > 0 ? { ready: planData.stats.ready, total: planData.stats.total } : undefined} />
-        <HelpOverlay />
+        <HelpOverlay activeTab={helpTab} />
       </Box>
     );
   }

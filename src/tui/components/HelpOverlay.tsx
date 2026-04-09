@@ -1,8 +1,14 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { HELP_ENTRIES } from '../keybindings.js';
+import { HELP_TABS } from '../keybindings.js';
 
-export function HelpOverlay(): React.ReactElement {
+interface HelpOverlayProps {
+  activeTab: number;
+}
+
+export function HelpOverlay({ activeTab }: HelpOverlayProps): React.ReactElement {
+  const tab = HELP_TABS[activeTab] ?? HELP_TABS[0];
+
   return (
     <Box
       flexDirection="column"
@@ -16,29 +22,27 @@ export function HelpOverlay(): React.ReactElement {
         <Text bold color="cyan"> Keyboard Shortcuts </Text>
       </Box>
 
-      {HELP_ENTRIES.map((entry, i) => {
-        if (!entry.key && !entry.desc) {
-          return <Text key={i}>{' '}</Text>;
-        }
-        if (!entry.desc) {
-          return (
-            <Text key={i} bold dimColor>
-              {entry.key}
-            </Text>
-          );
-        }
-        return (
-          <Box key={i} gap={2}>
-            <Box width={20}>
-              <Text bold color="yellow">{entry.key}</Text>
-            </Box>
-            <Text>{entry.desc}</Text>
+      {/* Tab bar */}
+      <Box marginBottom={1} gap={1} flexWrap="wrap">
+        {HELP_TABS.map((t, i) => (
+          <Text key={t.name} bold={i === activeTab} color={i === activeTab ? 'cyan' : undefined} dimColor={i !== activeTab}>
+            {i === activeTab ? `[${t.name}]` : t.name}
+          </Text>
+        ))}
+      </Box>
+
+      {/* Entries for active tab */}
+      {tab.entries.map((entry, i) => (
+        <Box key={i} gap={2}>
+          <Box width={22}>
+            <Text bold color="yellow">{entry.key}</Text>
           </Box>
-        );
-      })}
+          <Text>{entry.desc}</Text>
+        </Box>
+      ))}
 
       <Box marginTop={1} justifyContent="center">
-        <Text dimColor>Press ? to close</Text>
+        <Text dimColor>h/[ prev tab  l/] next tab  ? close</Text>
       </Box>
     </Box>
   );
