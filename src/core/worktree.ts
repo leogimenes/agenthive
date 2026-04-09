@@ -20,13 +20,22 @@ export async function createWorktree(
   const worktreePath = join(hiveRoot, '.hive', 'worktrees', name);
   const branchName = `agent/${name}`;
 
+  // Prune stale worktree registrations (e.g. from a previous failed init
+  // that removed directories but left git's internal tracking intact).
+  try {
+    await exec('git', ['worktree', 'prune'], { cwd: hiveRoot });
+  } catch { /* best-effort */ }
+
   if (existsSync(worktreePath)) {
     throw new Error(
       `Worktree already exists at ${worktreePath}. Remove it with \`hive remove ${name}\` or \`git worktree remove ${worktreePath}\` and retry.`,
     );
   }
 
-  const args = ['worktree', 'add', worktreePath, '-b', branchName];
+  // Disable custom git hooks during worktree creation — third-party hooks
+  // (e.g. Dolt, Husky) can fail and block worktree setup.
+  // Use -f to force creation if worktree path was previously registered.
+  const args = ['-c', 'core.hooksPath=', 'worktree', 'add', '-f', worktreePath, '-b', branchName];
   if (baseBranch) {
     args.push(baseBranch);
   }
@@ -40,7 +49,7 @@ export async function createWorktree(
     if (message.includes('already exists')) {
       await exec(
         'git',
-        ['worktree', 'add', worktreePath, branchName],
+        ['-c', 'core.hooksPath=', 'worktree', 'add', '-f', worktreePath, branchName],
         { cwd: hiveRoot },
       );
     } else {
