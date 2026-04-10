@@ -92,9 +92,20 @@ export function PlanPanel({
       </Box>
 
       {/* Task rows */}
-      {visible.length === 0 ? (
+      {tasks.length === 0 && !statusFilter && !agentFilter ? (
+        <Box flexDirection="column" marginY={1} gap={1}>
+          <Text dimColor>No plan loaded. To get started:</Text>
+          <Box flexDirection="column" marginLeft={2}>
+            <Text dimColor>{'  '}Add a task    <Text color="cyan">hive plan add --title "..." --target agent</Text></Text>
+            <Text dimColor>{'  '}Import plan   <Text color="cyan">hive plan import plan.yaml</Text></Text>
+            <Text dimColor>{'  '}View board    <Text color="cyan">hive plan board</Text></Text>
+            <Text dimColor>{'  '}View tree     <Text color="cyan">hive plan tree</Text></Text>
+          </Box>
+          <Text dimColor>Tip: use <Text color="cyan">hive init</Text> to scaffold a new project.</Text>
+        </Box>
+      ) : visible.length === 0 ? (
         <Box marginY={1}>
-          <Text dimColor>No tasks{statusFilter ? ` with status "${statusFilter}"` : ''}.</Text>
+          <Text dimColor>No tasks{statusFilter ? ` with status "${statusFilter}"` : agentFilter ? ` for agent "${agentFilter}"` : ''}.</Text>
         </Box>
       ) : (
         visible.map((task, i) => {
